@@ -24,7 +24,6 @@
  * THE SOFTWARE.
  */
 
-#define _POSIX_MONOTONIC_CLOCK
 #include <errno.h>
 #include <memory.h>
 #include <stdio.h>

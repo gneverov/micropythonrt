@@ -57,7 +57,7 @@ static void mp_sslcontext_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
                 dest[0] = mp_obj_new_bool(self->check_hostname);
             } else if(dest[1] != MP_OBJ_NULL) {
                 self->check_hostname = mp_obj_is_true(dest[1]);
-                if (self->check_hostname && (context->conf.authmode == MBEDTLS_SSL_VERIFY_NONE)) {
+                if (self->check_hostname && (context->conf.private_authmode == MBEDTLS_SSL_VERIFY_NONE)) {
                     mbedtls_ssl_conf_authmode(&context->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
                 }
                 dest[0] = MP_OBJ_NULL;
@@ -76,7 +76,7 @@ static void mp_sslcontext_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
             mp_obj_sslcontext_t *self = MP_OBJ_TO_PTR(self_in);
             socket_tls_context_t *context = mp_sslcontext_get(self_in);
             if (dest[0] != MP_OBJ_SENTINEL) {
-                dest[0] = MP_OBJ_NEW_SMALL_INT(context->conf.authmode);
+                dest[0] = MP_OBJ_NEW_SMALL_INT(context->conf.private_authmode);
             } else if(dest[1] != MP_OBJ_NULL) {
                 mp_int_t value = mp_obj_get_int(dest[1]);
                 if (
@@ -119,7 +119,7 @@ static mp_obj_t mp_sslcontext_cert_store_stats(mp_obj_t self_in) {
         int ret = mbedtls_x509_crt_parse_der_nocopy(&cert, ca_cert->buf, ca_cert->len);
         if (ret == 0) {
             num_certs++;
-            num_ca_certs += cert.ca_istrue ? 1 : 0;
+            num_ca_certs += cert.private_ca_istrue ? 1 : 0;
         }
         mbedtls_x509_crt_free(&cert);
         ca_cert = ca_cert->next;
@@ -187,19 +187,19 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_sslcontext_get_ca_certs_obj, 1, 2,
 static mp_obj_t mp_sslcontext_get_ciphers(mp_obj_t self_in) {
     socket_tls_context_t *context = mp_sslcontext_get(self_in);
     mp_obj_t list = mp_obj_new_list(0, NULL);
-    const int *cipher_id = context->conf.ciphersuite_list[MBEDTLS_SSL_MINOR_VERSION_3];
+    const int *cipher_id = context->conf.private_ciphersuite_list;
     assert(cipher_id);
     while (*cipher_id) {
         const mbedtls_ssl_ciphersuite_t *cipher = mbedtls_ssl_ciphersuite_from_id(*cipher_id++);
         mp_obj_t dict = mp_obj_new_dict(10);
-        mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_id), MP_OBJ_NEW_SMALL_INT(cipher->id));
-        mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_name), mp_obj_new_str_from_cstr(cipher->name)); 
+        mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_id), MP_OBJ_NEW_SMALL_INT(mbedtls_ssl_ciphersuite_get_id(cipher)));
+        mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_name), mp_obj_new_str_from_cstr(mbedtls_ssl_ciphersuite_get_name(cipher))); 
         mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_protocol), mp_obj_new_str_from_cstr("TLSv1.2"));
 
         mp_int_t bits = -1;
         mp_int_t aead = -1;
         qstr symmetric = 0;
-        switch (cipher->cipher) {
+        switch (cipher->private_cipher) {
             // case MBEDTLS_CIPHER_NULL:
             //     bits = 0;
             //     aead = 0;
@@ -229,7 +229,7 @@ static mp_obj_t mp_sslcontext_get_ciphers(mp_obj_t self_in) {
         mp_obj_dict_store(dict, MP_OBJ_NEW_QSTR(MP_QSTR_symmetric), symmetric ? MP_OBJ_NEW_QSTR(symmetric) : mp_const_none);
 
         qstr digest = 0;
-        switch (cipher->mac) {
+        switch (cipher->private_mac) {
             case MBEDTLS_MD_SHA256:
                 digest = MP_QSTR_sha256;
                 break;
@@ -246,7 +246,7 @@ static mp_obj_t mp_sslcontext_get_ciphers(mp_obj_t self_in) {
 
         qstr kea = 0;
         qstr auth = 0;
-        switch (cipher->key_exchange) {
+        switch (cipher->private_key_exchange) {
             case MBEDTLS_KEY_EXCHANGE_ECDHE_RSA:
                 kea = MP_QSTR_ecdhe;
                 auth = MP_QSTR_rsa;
@@ -398,9 +398,9 @@ static mp_obj_t mp_sslcontext_set_ecdh_curve(mp_obj_t self_in, mp_obj_t curve_na
         mp_raise_ValueError(NULL);
     }
 
-    context->curves[0] = info->grp_id;
-    context->curves[1] = MBEDTLS_ECP_DP_NONE;
-    mbedtls_ssl_conf_curves(&context->conf, context->curves);
+    context->groups[0] = info->tls_id;
+    context->groups[1] = MBEDTLS_SSL_IANA_TLS_GROUP_NONE;
+    mbedtls_ssl_conf_groups(&context->conf, context->groups);
     return mp_const_none;    
 }
 static MP_DEFINE_CONST_FUN_OBJ_2(mp_sslcontext_set_ecdh_curve_obj, mp_sslcontext_set_ecdh_curve);

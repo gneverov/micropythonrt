@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2024 Gregory Neverov
 // SPDX-License-Identifier: MIT
 
-#define _POSIX_MONOTONIC_CLOCK
 #include <errno.h>
 #include <math.h>
 #include <stdlib.h>

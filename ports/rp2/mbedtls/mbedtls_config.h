@@ -32,12 +32,10 @@
 
 /* Mbed TLS feature support */
 #define MBEDTLS_ENTROPY_HARDWARE_ALT
-#define MBEDTLS_AES_ROM_TABLES
 #define MBEDTLS_REMOVE_ARC4_CIPHERSUITES
 #define MBEDTLS_REMOVE_3DES_CIPHERSUITES
 #define MBEDTLS_ECP_DP_SECP256R1_ENABLED
 #define MBEDTLS_ECP_DP_SECP384R1_ENABLED
-#define MBEDTLS_ECP_NIST_OPTIM
 #define MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED
 #define MBEDTLS_KEY_EXCHANGE_ECDHE_RSA_ENABLED
 #define MBEDTLS_ERROR_STRERROR_DUMMY
@@ -73,6 +71,7 @@
 #define MBEDTLS_RSA_C
 #define MBEDTLS_SHA1_C
 #define MBEDTLS_SHA256_C
+#define MBEDTLS_SHA384_C
 #define MBEDTLS_SHA512_C
 // #define MBEDTLS_SSL_CACHE_C
 #define MBEDTLS_SSL_CLI_C
@@ -83,30 +82,32 @@
 #define MBEDTLS_X509_CRT_PARSE_C
 // #define MBEDTLS_X509_CRL_PARSE_C
 
-/* General configuration options */
+/* For test certificates */
+// #define MBEDTLS_BASE64_C
+// #define MBEDTLS_PEM_PARSE_C
 
-/* Module configuration options */
-/* MPI / BIGNUM options */
-// #define MBEDTLS_MPI_MAX_SIZE    512 // 48 bytes for a 384-bit elliptic curve
-/* ECP options */
+/* Save RAM at the expense of ROM */
+#define MBEDTLS_AES_ROM_TABLES
+
+/* Save RAM by adjusting to our exact needs */
+#define MBEDTLS_MPI_MAX_SIZE    512
+
+/* Save RAM at the expense of speed, see ecp.h */
 #define MBEDTLS_ECP_WINDOW_SIZE        2
 #define MBEDTLS_ECP_FIXED_POINT_OPTIM  0
+
+/* Significant speed benefit at the expense of some ROM */
+#define MBEDTLS_ECP_NIST_OPTIM
+
 /* Entropy options */
 #define MBEDTLS_ENTROPY_MAX_SOURCES 1
 
-// #define MBEDTLS_SSL_OUT_CONTENT_LEN             4096
-
-/* For test certificates */
-//  #define MBEDTLS_BASE64_C
-//  #define MBEDTLS_CERTS_C
-//  #define MBEDTLS_PEM_PARSE_C
-
 /* Save ROM and a few bytes of RAM by specifying our own ciphersuite list */
-#if 0
 #define MBEDTLS_SSL_CIPHERSUITES                        \
     MBEDTLS_TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,    \
-    MBEDTLS_TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
-#endif
+    MBEDTLS_TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,    \
+    MBEDTLS_TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,      \
+    MBEDTLS_TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
 
 /*
 * Save RAM at the expense of interoperability: do this only if you control
@@ -114,17 +115,13 @@
 * The minimum size here depends on the certificate chain used as well as the
 * typical size of records.
 */
-//  #define MBEDTLS_SSL_MAX_CONTENT_LEN             1024
+// #define MBEDTLS_SSL_IN_CONTENT_LEN             1024
+// #define MBEDTLS_SSL_OUT_CONTENT_LEN             1024
 
 /* These defines are present so that the config modifying scripts can enable
 * them during tests/scripts/test-ref-configs.pl */
 // #define MBEDTLS_USE_PSA_CRYPTO
 // #define MBEDTLS_PSA_CRYPTO_C
-
-/* With USE_PSA_CRYPTO, some PK operations also need PK_WRITE */
-#if defined(MBEDTLS_USE_PSA_CRYPTO)
-#define MBEDTLS_PK_WRITE_C
-#endif
 
 /* Error messages and TLS debugging traces
 * (huge code size increase, needed for tests/ssl-opt.sh) */
@@ -132,7 +129,5 @@
 #define MBEDTLS_DEBUG_C
 #define MBEDTLS_ERROR_C
 #endif
-
-#include "mbedtls/check_config.h"
 
 #endif /* MBEDTLS_CONFIG_H */
