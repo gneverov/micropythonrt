@@ -16,11 +16,11 @@
 #define LWIP_RAW                        1
 #define LWIP_NETCONN                    0
 #define LWIP_SOCKET                     0
-#define LWIP_STATS                      0
+#define LWIP_STATS                      LWIP_SNMP
 #define LWIP_NETIF_HOSTNAME             0
 #define LWIP_NETIF_EXT_STATUS_CALLBACK  1
 #define LWIP_NETIF_STATUS_CALLBACK      1
-#define LWIP_NETIF_LOOPBACK             0
+#define LWIP_NETIF_LOOPBACK             1
 
 #define LWIP_IPV4                       1
 #define LWIP_IPV6                       1
@@ -31,10 +31,14 @@
 #define LWIP_DHCP_GET_NTP_SRV           1
 #define LWIP_DHCP_DOES_ACD_CHECK        0 // to speed DHCP up
 #define LWIP_DNS                        1
-#define LWIP_DNS_SUPPORT_MDNS_QUERIES   1
+#define LWIP_DNS_SUPPORT_MDNS_QUERIES   0
 #define LWIP_MDNS_RESPONDER             0
 #define LWIP_IGMP                       1
 #define LWIP_TCP_KEEPALIVE              0
+#define LWIP_SNMP                       0
+#if LWIP_SNMP
+#define MIB2_STATS                      1
+#endif
 
 #define LWIP_NUM_NETIF_CLIENT_DATA      (1 + LWIP_MDNS_RESPONDER)
 
@@ -55,9 +59,10 @@ typedef uint32_t sys_prot_t;
 #define MEMP_MEM_MALLOC                 1
 #define LWIP_ERRNO_STDINCLUDE           1
 #define TCPIP_MBOX_SIZE                 8
-#define TCPIP_THREAD_STACKSIZE          2048
+#define TCPIP_THREAD_STACKSIZE          4096
 #define TCPIP_THREAD_PRIO               2
 
+#define LWIP_FREERTOS_SYS_ARCH_PROTECT_USES_MUTEX 1
 #define LWIP_FREERTOS_CHECK_CORE_LOCKING 1
 void sys_mark_tcpip_thread(void);
 #define LWIP_MARK_TCPIP_THREAD()   sys_mark_tcpip_thread()

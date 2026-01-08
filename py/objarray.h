@@ -64,6 +64,7 @@ static inline void mp_obj_memoryview_init(mp_obj_array_t *self, size_t typecode,
 
 #if MICROPY_PY_ARRAY || MICROPY_PY_BUILTINS_BYTEARRAY
 MP_DECLARE_CONST_FUN_OBJ_2(mp_obj_array_append_obj);
+MP_DECLARE_CONST_FUN_OBJ_1(mp_obj_array_clear_obj);
 MP_DECLARE_CONST_FUN_OBJ_2(mp_obj_array_extend_obj);
 #endif
 

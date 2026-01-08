@@ -34,6 +34,8 @@ set(MICROPY_SOURCE_PY
     ${MICROPY_PY_DIR}/emitnx86.c
     ${MICROPY_PY_DIR}/emitnxtensa.c
     ${MICROPY_PY_DIR}/emitnxtensawin.c
+    ${MICROPY_PY_DIR}/encoding.c
+    ${MICROPY_PY_DIR}/extras.c
     ${MICROPY_PY_DIR}/formatfloat.c
     ${MICROPY_PY_DIR}/frozenmod.c
     ${MICROPY_PY_DIR}/gc.c
@@ -51,8 +53,8 @@ set(MICROPY_SOURCE_PY
     ${MICROPY_PY_DIR}/modmicropython.c
     ${MICROPY_PY_DIR}/modstruct.c
     ${MICROPY_PY_DIR}/modsys.c
-    ${MICROPY_PY_DIR}/modthread.c
     ${MICROPY_PY_DIR}/moderrno.c
+    ${MICROPY_PY_DIR}/modweakref.c
     ${MICROPY_PY_DIR}/mpprint.c
     ${MICROPY_PY_DIR}/mpstate.c
     ${MICROPY_PY_DIR}/mpz.c
@@ -122,7 +124,7 @@ set(MICROPY_SOURCE_PY
     ${MICROPY_PY_DIR}/ringbuf.c
     ${MICROPY_PY_DIR}/runtime.c
     ${MICROPY_PY_DIR}/runtime_utils.c
-    ${MICROPY_PY_DIR}/scheduler.c
+    ${MICROPY_PY_DIR}/scheduler_freertos.c
     ${MICROPY_PY_DIR}/scope.c
     ${MICROPY_PY_DIR}/sequence.c
     ${MICROPY_PY_DIR}/showbc.c
@@ -134,25 +136,3 @@ set(MICROPY_SOURCE_PY
     ${MICROPY_PY_DIR}/vstr.c
     ${MICROPY_PY_DIR}/warning.c
 )
-
-# Helper macro to collect include directories and compile definitions for qstr processing.
-macro(micropy_gather_target_properties targ)
-    if(TARGET ${targ})
-        get_target_property(type ${targ} TYPE)
-        set(_inc OFF)
-        set(_def OFF)
-        if(${type} STREQUAL STATIC_LIBRARY)
-            get_target_property(_inc ${targ} INCLUDE_DIRECTORIES)
-            get_target_property(_def ${targ} COMPILE_DEFINITIONS)
-        elseif(${type} STREQUAL INTERFACE_LIBRARY)
-            get_target_property(_inc ${targ} INTERFACE_INCLUDE_DIRECTORIES)
-            get_target_property(_def ${targ} INTERFACE_COMPILE_DEFINITIONS)
-        endif()
-        if(_inc)
-            list(APPEND MICROPY_CPP_INC_EXTRA ${_inc})
-        endif()
-        if(_def)
-            list(APPEND MICROPY_CPP_DEF_EXTRA ${_def})
-        endif()
-    endif()
-endmacro()

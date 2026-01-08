@@ -7,7 +7,7 @@
 
 #include "extmod/io/modio.h"
 #include "extmod/modos_newlib.h"
-#include "py/gc_handle.h"
+#include "py/objstr.h"
 #include "py/runtime.h"
 
 
@@ -126,22 +126,6 @@ const mp_stream_p_t mp_io_stream_p = {
     .ioctl = mp_io_stream_ioctl,
 };
 
-static MP_DEFINE_CONST_OBJ_TYPE(
-    mp_type_io_native,
-    MP_QSTR_NativeIOBase,
-    MP_TYPE_FLAG_ITER_IS_ITERNEXT,
-    make_new, mp_io_native_make_new,
-    iter, &mp_io_base_iternext,
-    protocol, &mp_io_stream_p
-    );
-
-
-static mp_obj_t mp_io_base_init(mp_obj_t self_in) {
-    mp_store_attr(self_in, MP_QSTR_closed, mp_const_false);
-    return mp_const_none;
-}
-static MP_DEFINE_CONST_FUN_OBJ_1(mp_io_base_init_obj, mp_io_base_init);
-
 static mp_obj_t mp_io_base_enter(mp_obj_t self_in) {
     mp_obj_t closed = mp_load_attr(self_in, MP_QSTR_closed);
     if (mp_obj_is_true(closed)) {
@@ -222,7 +206,7 @@ static mp_obj_t mp_io_base_readlines(size_t n_args, const mp_obj_t *args) {
     if ((n_args > 1) && (args[1] != mp_const_none)) {
         hint = mp_obj_get_int(args[1]);
     }
-    mp_obj_t list = mp_obj_new_list((hint >= 0) ? hint : 0, NULL);
+    mp_obj_t list = mp_obj_new_list(0, NULL);
     mp_obj_t readline_args[2];
     mp_load_method(args[0], MP_QSTR_readline, readline_args);
     while (hint) {
@@ -231,7 +215,11 @@ static mp_obj_t mp_io_base_readlines(size_t n_args, const mp_obj_t *args) {
             break;
         }
         mp_obj_list_append(list, line);
-        hint--;
+        if (mp_obj_is_str_or_bytes(line)) {
+            size_t len;
+            mp_obj_str_get_data(line, &len);
+            hint -= len;
+        }
     }
     return list;
 }
@@ -264,7 +252,7 @@ MP_DEFINE_CONST_FUN_OBJ_2(mp_io_base_writelines_obj, mp_io_base_writelines);
 static const mp_rom_map_elem_t mp_io_base_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR___enter__),   MP_ROM_PTR(&mp_io_base_enter_obj) },
     { MP_ROM_QSTR(MP_QSTR___exit__),    MP_ROM_PTR(&mp_io_base_exit_obj) },
-    { MP_ROM_QSTR(MP_QSTR___init__),    MP_ROM_PTR(&mp_io_base_init_obj) },
+    { MP_ROM_QSTR(MP_QSTR_closed),      MP_ROM_FALSE },
 
     { MP_ROM_QSTR(MP_QSTR_close),       MP_ROM_PTR(&mp_io_base_close_obj) },
     { MP_ROM_QSTR(MP_QSTR_flush),       MP_ROM_PTR(&mp_io_base_none_obj) },
@@ -280,16 +268,13 @@ static const mp_rom_map_elem_t mp_io_base_locals_dict_table[] = {
 static MP_DEFINE_CONST_DICT(mp_io_base_locals_dict, mp_io_base_locals_dict_table);
 
 __attribute__((visibility("hidden")))
-mp_obj_t mp_type_io_base(void) {
-    static gc_handle_t *gc_type;
-    if (gc_type && !gc_handle_get(gc_type)) {
-        gc_handle_free(gc_type);
-        gc_type = NULL;
-    }
-    if (!gc_type) {
-        mp_obj_t items[1] = { MP_OBJ_FROM_PTR(&mp_type_io_native) };
-        mp_obj_t type = mp_obj_new_type(MP_QSTR_IOBase, mp_obj_new_tuple(1, items), MP_OBJ_FROM_PTR(&mp_io_base_locals_dict));
-        gc_type = gc_handle_alloc(MP_OBJ_TO_PTR(type));
-    }
-    return MP_OBJ_FROM_PTR(gc_handle_get(gc_type));
-}
+MP_DEFINE_CONST_OBJ_TYPE(
+    mp_type_io_base,
+    MP_QSTR_IOBase,
+    MP_TYPE_FLAG_ITER_IS_ITERNEXT | MP_TYPE_FLAG_TRUE_SELF,
+    make_new, mp_io_native_make_new,
+    // print, mp_io_buffer_print,
+    iter, &mp_io_base_iternext,
+    protocol, &mp_io_stream_p,
+    locals_dict, &mp_io_base_locals_dict
+    );

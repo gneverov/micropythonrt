@@ -35,6 +35,8 @@
 
 #include "py/mpthread.h"
 
+#define MP_THREAD_DEFAULT_STACK_SIZE 4096
+
 typedef struct {
     SemaphoreHandle_t handle;
     StaticSemaphore_t buffer;
@@ -43,6 +45,7 @@ typedef struct {
 void mp_thread_init(void);
 void mp_thread_deinit(void);
 void mp_thread_gc_others(void);
+bool mp_thread_iterate(thread_t **pthread, struct _mp_state_thread_t **pstate);
 
 static inline void mp_thread_set_state(struct _mp_state_thread_t *state) {
     vTaskSetThreadLocalStoragePointer(NULL, TLS_INDEX_APP, state);

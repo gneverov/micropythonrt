@@ -91,4 +91,4 @@
 	url = https://github.com/littlefs-project/littlefs.git
 [submodule "lib/morelibc"]
 	path = lib/morelibc
-	url = /home/gneverov/morelibc/
+	url = https://github.com/gneverov/morelibc.git

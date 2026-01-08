@@ -58,7 +58,7 @@
 
 // Initial number of entries for qstr pool, set so that the first dynamically
 // allocated pool is twice this size.  The value here must be <= MP_QSTRnumber_of.
-#define MICROPY_ALLOC_QSTR_ENTRIES_INIT (10)
+#define MICROPY_ALLOC_QSTR_ENTRIES_INIT (100)
 
 // this must match the equivalent function in makeqstrdata.py
 size_t qstr_compute_hash(const byte *data, size_t len) {
@@ -195,7 +195,10 @@ static const qstr_pool_t *find_qstr(qstr *q) {
         pool = pool->prev;
     }
     *q -= pool->total_prev_len;
-    assert(*q < pool->len);
+    // assert(*q < pool->len);
+    if (*q >= pool->len) {
+        mp_raise_type(&mp_type_RuntimeError);
+    }
     return pool;
 }
 

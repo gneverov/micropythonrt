@@ -103,21 +103,14 @@ mp_obj_t mp_micropython_mem_info(size_t n_args, const mp_obj_t *args) {
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_micropython_mem_info_obj, 0, 1, mp_micropython_mem_info);
 
 #ifndef NDEBUG
-mp_obj_t mp_micropython_find_ptrs(mp_obj_t addr_in) {
-    void *addr = (void *)mp_obj_get_int(addr_in);
-    gc_find_ptrs(&mp_plat_print, addr);
-    return mp_const_none;
-}
-static MP_DEFINE_CONST_FUN_OBJ_1(mp_micropython_find_ptrs_obj, mp_micropython_find_ptrs);
-
-mp_obj_t mp_micropython_from_ptr(mp_obj_t ptr_in) {
+static mp_obj_t mp_micropython_from_ptr(mp_obj_t ptr_in) {
     void *ptr = (void *)mp_obj_get_int(ptr_in);
     ptr = gc_verify_ptr(ptr);
     return ptr ? MP_OBJ_FROM_PTR(ptr) : mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(mp_micropython_from_ptr_obj, mp_micropython_from_ptr);
 
-mp_obj_t mp_micropython_to_ptr(mp_obj_t obj_in) {
+static mp_obj_t mp_micropython_to_ptr(mp_obj_t obj_in) {
     if (!mp_obj_is_obj(obj_in)) {
         mp_raise_TypeError(NULL);
     }
@@ -125,7 +118,77 @@ mp_obj_t mp_micropython_to_ptr(mp_obj_t obj_in) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(mp_micropython_to_ptr_obj, mp_micropython_to_ptr);
 
-mp_obj_t mp_micropython_from_qstr(mp_obj_t qstr_in) {
+static mp_obj_t mp_micropython_trace_ptr(size_t n_args, const mp_obj_t *args) {
+    void *addr;
+    if (mp_obj_is_obj(args[0])) {
+        addr = MP_OBJ_TO_PTR(args[0]);
+    } else {
+        addr = (void *)mp_obj_get_int(args[0]);
+    }
+
+    size_t max_len = (n_args > 1) ? mp_obj_get_int(args[1]) : 16;
+    void **buf = malloc(max_len * sizeof(void *));
+    size_t len = 0;
+    gc_collect();
+    while (len < max_len) {
+        buf[len++] = addr;
+        if (addr == NULL) {
+            break;
+        }
+
+        for (size_t i = 0; i < len - 1; i++) {
+            if (buf[i] == addr) {
+                goto end;
+            }
+        }
+
+        void **next;
+        switch (gc_find_ptrs(addr, 1, &next)) {
+            case 0:
+                addr = NULL;
+                break;
+            case 1:
+                addr = (void *)next;
+                break;
+            default:
+                goto end;
+        }
+    }
+
+end:
+    mp_obj_t list_obj = mp_obj_new_list(len, NULL);
+    mp_obj_list_t *list = MP_OBJ_TO_PTR(list_obj);
+    for (size_t i = 0; i < len; i++) {
+        list->items[i] = mp_obj_new_int((intptr_t)buf[i]);
+    }
+    free(buf);
+    return list_obj;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_micropython_trace_ptr_obj, 1, 2, mp_micropython_trace_ptr);
+
+static mp_obj_t mp_micropython_find_ptrs(mp_obj_t addr_in) {
+    void *addr;
+    if (mp_obj_is_obj(addr_in)) {
+        addr = MP_OBJ_TO_PTR(addr_in);
+    } else {
+        addr = (void *)mp_obj_get_int(addr_in);
+    }
+    gc_collect();
+    size_t len = gc_find_ptrs(addr, 0, NULL);
+    void **buf = malloc(len * sizeof(void *));
+    len = gc_find_ptrs(addr, len, &buf);
+
+    mp_obj_t list_obj = mp_obj_new_list(len, NULL);
+    mp_obj_list_t *list = MP_OBJ_TO_PTR(list_obj);
+    for (size_t i = 0; i < len; i++) {
+        list->items[i] = mp_obj_new_int((intptr_t)buf[i]);
+    }
+    free(buf);
+    return list_obj;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(mp_micropython_find_ptrs_obj, mp_micropython_find_ptrs);
+
+static mp_obj_t mp_micropython_from_qstr(mp_obj_t qstr_in) {
     mp_int_t qst = mp_obj_get_int(qstr_in);
     const qstr_pool_t *pool = MP_STATE_VM(last_pool);
     if (qst >= pool->total_prev_len + pool->len) {
@@ -134,6 +197,17 @@ mp_obj_t mp_micropython_from_qstr(mp_obj_t qstr_in) {
     return MP_OBJ_NEW_QSTR(qst);
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(mp_micropython_from_qstr_obj, mp_micropython_from_qstr);
+
+static mp_obj_t mp_micropython_to_qstr(mp_obj_t str_in) {
+    if (mp_obj_is_qstr(str_in)) {
+        return MP_OBJ_NEW_SMALL_INT(MP_OBJ_QSTR_VALUE(str_in));
+    }
+    if (mp_obj_is_str(str_in)) {
+        return mp_const_none;
+    }
+    mp_raise_TypeError(NULL);
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(mp_micropython_to_qstr_obj, mp_micropython_to_qstr);
 
 static mp_obj_t mp_micropython_debug_break(void) {
     __breakpoint();
@@ -250,9 +324,11 @@ static const mp_rom_map_elem_t mp_module_micropython_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_qstr_info), MP_ROM_PTR(&mp_micropython_qstr_info_obj) },
     #ifndef NDEBUG
     { MP_ROM_QSTR(MP_QSTR_find_ptrs), MP_ROM_PTR(&mp_micropython_find_ptrs_obj) },
+    { MP_ROM_QSTR(MP_QSTR_trace_ptr), MP_ROM_PTR(&mp_micropython_trace_ptr_obj) },
     { MP_ROM_QSTR(MP_QSTR_from_ptr), MP_ROM_PTR(&mp_micropython_from_ptr_obj) },
     { MP_ROM_QSTR(MP_QSTR_to_ptr), MP_ROM_PTR(&mp_micropython_to_ptr_obj) },
     { MP_ROM_QSTR(MP_QSTR_from_qstr), MP_ROM_PTR(&mp_micropython_from_qstr_obj) },
+    { MP_ROM_QSTR(MP_QSTR_to_qstr), MP_ROM_PTR(&mp_micropython_to_qstr_obj) },
     { MP_ROM_QSTR(MP_QSTR_debug_break), MP_ROM_PTR(&mp_micropython_debug_break_obj) },
     #endif
     #if MICROPY_FREERTOS

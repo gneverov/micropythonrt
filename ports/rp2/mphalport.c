@@ -24,10 +24,11 @@
  * THE SOFTWARE.
  */
 
+#define _POSIX_MONOTONIC_CLOCK
 #include <errno.h>
 #include <memory.h>
 #include <stdio.h>
-#include <sys/time.h>
+#include <time.h>
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -96,20 +97,12 @@ void mp_hal_delay_ms(mp_uint_t ms) {
 }
 
 void mp_hal_time_ns_set_from_rtc(void) {
-    #if PICO_RP2040
-    // Outstanding RTC register writes need at least two RTC clock cycles to
-    // update. (See RP2040 datasheet section 4.8.4 "Reference clock").
-    mp_hal_delay_us(44);
-
-    void inittimeofday(void);
-    inittimeofday();
-    #endif
 }
 
 uint64_t mp_hal_time_ns(void) {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (tv.tv_sec * 1000000 + tv.tv_usec) * 1000;
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec * 1000000000 + t.tv_nsec;
 }
 
 // Generate a random locally administered MAC address (LAA)

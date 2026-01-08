@@ -72,11 +72,14 @@ if(MICROPY_FREERTOS)
         ${MICROPY_EXTMOD_DIR}/modos_newlib.c
         ${MICROPY_EXTMOD_DIR}/modselect_freertos.c
         ${MICROPY_EXTMOD_DIR}/modsignal.c
+        ${MICROPY_EXTMOD_DIR}/modtempfile.c
         ${MICROPY_EXTMOD_DIR}/modtermios.c
         ${MICROPY_EXTMOD_DIR}/modtime_newlib.c
     )
     include(${MICROPY_EXTMOD_DIR}/io/io.cmake)
     include(${MICROPY_EXTMOD_DIR}/socket/socket.cmake)
+    include(${MICROPY_EXTMOD_DIR}/ssl/ssl.cmake)
+    include(${MICROPY_EXTMOD_DIR}/thread/thread.cmake)
     
     list(APPEND MICROPY_SOURCE_EXTMOD   
         ${MICROPY_EXTMOD_DIR}/usb/modusb.c

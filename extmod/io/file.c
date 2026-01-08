@@ -39,6 +39,7 @@ static mp_obj_t mp_io_file_make_new(const mp_obj_type_t *type, size_t n_args, si
                 mode_x = O_CREAT | O_TRUNC;
                 break;
             case 'x':
+                mode_rw = O_WRONLY;
                 mode_x = O_CREAT | O_EXCL;
                 break;
             case 'a':
@@ -61,11 +62,17 @@ static mp_obj_t mp_io_file_make_new(const mp_obj_type_t *type, size_t n_args, si
     }   
     mp_obj_io_file_t *self = mp_obj_malloc_with_finaliser(mp_obj_io_file_t, type);
     self->fd = mp_obj_get_int(fd_obj);
-    self->flags = fcntl(self->fd, F_GETFL);
-    self->flags = (self->flags & ~O_ACCMODE) | ((self->flags + 1) & O_ACCMODE);
+    self->flags = 0;
     self->name = name;
     self->mode = mode;
     self->closefd = closefd;
+
+    int flags = fcntl(self->fd, F_GETFL);
+    mp_os_check_ret(flags);
+    self->flags = (flags + 1) & O_ACCMODE & (mode_rw + 1);
+    if (self->flags != (mode_rw + 1)) {
+        mp_raise_OSError(EBADF);
+    }
     return MP_OBJ_FROM_PTR(self);
 }
 
@@ -191,7 +198,7 @@ static MP_DEFINE_CONST_FUN_OBJ_2(mp_io_file_readinto_obj, mp_io_file_readinto);
 
 static mp_obj_t mp_io_file_readline(size_t n_args, const mp_obj_t *args) {
     mp_obj_io_file_t *self = mp_io_file_get(args[0]);
-    size_t size = (n_args > 1) ? mp_obj_get_int(args[1]) : -1;
+    size_t size = ((n_args > 1) && (args[1] != mp_const_none)) ? mp_obj_get_int(args[1]) : -1;
 
     vstr_t vstr;
     vstr_init(&vstr, MIN(size, MP_OS_DEFAULT_BUFFER_SIZE));
@@ -248,7 +255,7 @@ static mp_obj_t mp_io_file_truncate(size_t n_args, const mp_obj_t *args) {
     }
     int ret = ftruncate(self->fd, size);
     mp_os_check_ret(ret);
-    return mp_const_none;
+    return mp_obj_new_int(size);
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_io_file_truncate_obj, 1, 2, mp_io_file_truncate);
 

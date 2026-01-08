@@ -189,31 +189,38 @@ void mp_obj_exception_print(const mp_print_t *print, mp_obj_t o_in, mp_print_kin
 
     if (k == PRINT_STR || k == PRINT_EXC) {
         if (o->args == NULL || o->args->len == 0) {
-            mp_print_str(print, "");
             return;
         }
-
-        #if MICROPY_PY_ERRNO
-        // try to provide a nice OSError error message
-        int errcode;
-        if (mp_obj_is_os_error(o, &errcode)) {
-            mp_obj_t errstr = mp_errno_to_str(errcode);
-            mp_printf(print, "[Errno " INT_FMT "] %s", errcode, mp_obj_str_get_str(errstr));
-            if (o->args->len > 1) {
-                mp_print_str(print, ": ");
-                mp_obj_print_helper(print, o->args->items[1], PRINT_STR);
-            }
-            return;
-        }
-        #endif
-
         if (o->args->len == 1) {
             mp_obj_print_helper(print, o->args->items[0], PRINT_STR);
             return;
         }
+        if (mp_obj_is_subclass_fast(MP_OBJ_FROM_PTR(o->base.type), MP_OBJ_FROM_PTR(&mp_type_OSError)) && (o->args->len <= 4)) {
+            mp_print_str(print, "[Errno ");
+            mp_obj_print_helper(print, o->args->items[0], PRINT_STR);
+            mp_print_str(print, "] ");
+            mp_obj_print_helper(print, o->args->items[1], PRINT_STR);
+            if (o->args->len > 2) {
+                mp_print_str(print, ": ");
+                mp_obj_print_helper(print, o->args->items[2], PRINT_REPR);
+            }
+            if (o->args->len > 3) {
+                mp_print_str(print, " -> ");
+                mp_obj_print_helper(print, o->args->items[3], PRINT_REPR);
+            }
+            return;
+        }
     }
 
-    mp_obj_tuple_print(print, MP_OBJ_FROM_PTR(o->args), kind);
+    if (o->args == NULL || o->args->len == 0) {
+        mp_print_str(print, "()");
+    } else if (o->args->len == 1) {
+        mp_print_str(print, "(");
+        mp_obj_print_helper(print, o->args->items[0], k);
+        mp_print_str(print, ")");
+    } else {
+        mp_obj_tuple_print(print, MP_OBJ_FROM_PTR(o->args), k);
+    }
 }
 
 mp_obj_t mp_obj_exception_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
@@ -295,10 +302,23 @@ void mp_obj_exception_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
     if (attr == MP_QSTR_args) {
         decompress_error_text_maybe(self);
         dest[0] = MP_OBJ_FROM_PTR(self->args);
-    } else if (attr == MP_QSTR_value || attr == MP_QSTR_errno) {
-        // These are aliases for args[0]: .value for StopIteration and .errno for OSError.
-        // For efficiency let these attributes apply to all exception instances.
-        dest[0] = mp_obj_exception_get_value(self_in);
+    } else if (attr == MP_QSTR___traceback__) {
+        dest[0] = mp_const_none;
+    } else if (mp_obj_is_subclass_fast(MP_OBJ_FROM_PTR(self->base.type), MP_OBJ_FROM_PTR(&mp_type_OSError))) {
+        const qstr fields[] = { MP_QSTR_errno, MP_QSTR_strerror, MP_QSTR_filename };
+        mp_obj_tuple_t *args = self->args;
+        for (size_t i = 0; i < 3; i++) {
+            if (fields[i] == attr) {
+                dest[0] = (i < args->len) ? args->items[i] : mp_const_none;
+                return;
+            }
+        }
+    } else if (mp_obj_is_subclass_fast(MP_OBJ_FROM_PTR(self->base.type), MP_OBJ_FROM_PTR(&mp_type_StopIteration))) {
+        mp_obj_tuple_t *args = self->args;
+        if (attr == MP_QSTR_value) {
+            dest[0] = (0 < args->len) ? args->items[0] : mp_const_none;
+            return;
+        }
     }
 }
 
@@ -341,9 +361,8 @@ MP_DEFINE_EXCEPTION(Exception, BaseException)
     MP_DEFINE_EXCEPTION(UnboundLocalError, NameError)
     */
   MP_DEFINE_EXCEPTION(OSError, Exception)
-    /*
     MP_DEFINE_EXCEPTION(BlockingIOError, OSError)
-    MP_DEFINE_EXCEPTION(ChildProcessError, OSError)
+    // MP_DEFINE_EXCEPTION(ChildProcessError, OSError)
     MP_DEFINE_EXCEPTION(ConnectionError, OSError)
       MP_DEFINE_EXCEPTION(BrokenPipeError, ConnectionError)
       MP_DEFINE_EXCEPTION(ConnectionAbortedError, ConnectionError)
@@ -353,12 +372,11 @@ MP_DEFINE_EXCEPTION(Exception, BaseException)
     MP_DEFINE_EXCEPTION(IsADirectoryError, OSError)
     MP_DEFINE_EXCEPTION(NotADirectoryError, OSError)
     MP_DEFINE_EXCEPTION(PermissionError, OSError)
-    MP_DEFINE_EXCEPTION(ProcessLookupError, OSError)
+    // MP_DEFINE_EXCEPTION(ProcessLookupError, OSError)
     MP_DEFINE_EXCEPTION(TimeoutError, OSError)
     MP_DEFINE_EXCEPTION(FileExistsError, OSError)
     MP_DEFINE_EXCEPTION(FileNotFoundError, OSError)
-    MP_DEFINE_EXCEPTION(ReferenceError, Exception)
-    */
+  // MP_DEFINE_EXCEPTION(ReferenceError, Exception)
   MP_DEFINE_EXCEPTION(RuntimeError, Exception)
     MP_DEFINE_EXCEPTION(NotImplementedError, RuntimeError)
   MP_DEFINE_EXCEPTION(SyntaxError, Exception)
@@ -374,7 +392,8 @@ MP_DEFINE_EXCEPTION(Exception, BaseException)
   MP_DEFINE_EXCEPTION(ValueError, Exception)
 #if MICROPY_PY_BUILTINS_STR_UNICODE
     MP_DEFINE_EXCEPTION(UnicodeError, ValueError)
-    //TODO: Implement more UnicodeError subclasses which take arguments
+      // MP_DEFINE_EXCEPTION(UnicodeDecodeError, UnicodeError)
+      // MP_DEFINE_EXCEPTION(UnicodeEncodeError, UnicodeError)
 #endif
   /*
   MP_DEFINE_EXCEPTION(Warning, Exception)

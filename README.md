@@ -25,16 +25,18 @@ If you are interested in using MicroPythonRT, please open an [issue](https://git
 
 - TinyUSB support for network devices is exposed, allowing the microcontroller to connect to the Internet over a USB cable.
 
+- Robust integration for [Mbed-TLS](https://github.com/Mbed-TLS/mbedtls) including certificate verification, CA certificate paths, and server-side.
+
 - Arbitrary Python modules can be loaded into flash at run-time instead of RAM. This frees up large amounts of valuable RAM and allows for larger Python programs.
 
 - The MicroPython REPL is extended to support the `await` keyword for `asyncio` programming.
 
 ## Supported Hardware
-**Ports**: Currently MicroPythonRT is only supported on the RP2 port. However with time and effort it can be supported on any platform that support FreeRTOS. Only the [RPI PICO](https://micropython.org/download/RPI_PICO/) and [RPI PICO W](https://micropython.org/download/RPI_PICO_W/) boards have been tested.
+**Ports**: Currently MicroPythonRT is only supported on the RP2 port. However with time and effort it can be supported on any platform that support FreeRTOS. Only the [RPI PICO 2](https://micropython.org/download/RPI_PICO2/), [RPI PICO](https://micropython.org/download/RPI_PICO/) and [RPI PICO W](https://micropython.org/download/RPI_PICO_W/) boards have been tested.
 
 **WIFI**: CYW43 support is ported in MicroPythonRT. Other wifi hardware (ninaw10, wiznet5k) are not currently supported.
 
-**Bluetooth**: The recently added Bluetooth support for RP2 in MicroPython has not yet been ported to MicroPythonRT.
+**Bluetooth**: The Bluetooth functionality of the CYW43 is not currently supported.
 
 ## Getting Started ##
 See the [getting started](/getstarted.md) section for details on how to install MicroPythonRT and run example code.
@@ -77,8 +79,7 @@ pin.value = 1     # output high
 
 - `os`: The MicroPython VFS implementation is replaced with Morelibc. This allows interoperation of the filesystem between MicroPython and C, including the mounting of block devices, and redirecting stdio through character devices. This module also contains the dynamic linking API and other functionality from Morelibc and the CPython `os` module.
 
-- `select`: The select module is rewritten to use Morelibc and FreeRTOS. It exposes a class called `Selector` which is basically a CPython-compatible [`selectors.EpollSelector`](https://docs.python.org/3/library/selectors.html?highlight=selector#selectors.BaseSelector) class. The select/poll implementation can wait on any sort of file descriptor, including sockets, serial devices, and other hardware.
-The selector is a crucial part of any asyncio implementation. At its heart, an asyncio event loop will contain a selector to bring about IO concurrency between tasks.
+- `select`/`selectors`: The select module is rewritten to use Morelibc and FreeRTOS. The select/poll implementation can wait on any sort of file descriptor, including sockets, serial devices, and other hardware. The selector is a crucial part of any asyncio implementation. At its heart, an asyncio event loop will contain a selector to bring about IO concurrency between tasks.
 
 - `signal`: A new module similar to the [signal](https://docs.python.org/3/library/signal.html) module from CPython. Signals are important because they are the way of controlling Ctrl-C behavior in Python. For example, when running an asyncio event loop and the user presses Ctrl-C, you don't want to break inside the event loop code and leave the running tasks in an undefined state. Instead you want to cancel all the tasks and wait for their cleanup to finish. The signal module provides a portable way of overriding Ctrl-C behavior. To this end, the only signal type MicroPythonRT supports is SIGINT.
 
@@ -86,7 +87,7 @@ The selector is a crucial part of any asyncio implementation. At its heart, an a
 
 - `time`: Module refactored to be more consistent with CPython and to use Picolibc for time functions, including timezone information.
 
-- `_thread` and `threading`: The `_thread` module is implemented using FreeRTOS tasks. Python code can create any number of threads (limited by available RAM). The implementation relies on a GIL, do just as in CPython, there is no automatic compute parallelism advantage to using multiple threads. `_thread` is a low-level module you don't use directly. The higher-level `threading` module in MicroPython is currently minimal and needs to be filled out.
+- `threading`: The threading (and lower-level `_thread`) module is implemented using FreeRTOS tasks. Python code can create any number of threads (limited by available RAM). The implementation relies on a GIL, so just as in CPython, there is no automatic compute parallelism advantage to using multiple threads. A full suite of synchronization objects is also implemented.
 
 - `usb`: A new module that allows Python code to interact with TinyUSB. Support is somewhat limited and currently only exposes CDC and MSC devices, in addition to network devices through `network`.
 

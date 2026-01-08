@@ -63,6 +63,11 @@ Q(<genexpr>)
 Q(<string>)
 Q(<stdin>)
 Q(utf-8)
+Q(:)
+#if MICROPY_FREERTOS
+Q(.)
+Q(..)
+#endif
 
 #if MICROPY_MODULE_FROZEN
 Q(.frozen)

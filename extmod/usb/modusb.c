@@ -19,7 +19,7 @@ static mp_obj_t usb_speed(void) {
     tud_unlock();
     return mp_obj_new_float(index < 3 ? values[index] : 0.0f);
 }
-MP_DEFINE_CONST_FUN_OBJ_0(usb_speed_obj, usb_speed);
+static MP_DEFINE_CONST_FUN_OBJ_0(usb_speed_obj, usb_speed);
 
 static mp_obj_t usb_connected(void) {
     tud_lock();
@@ -27,7 +27,7 @@ static mp_obj_t usb_connected(void) {
     tud_unlock();
     return mp_obj_new_bool(connected);
 }
-MP_DEFINE_CONST_FUN_OBJ_0(usb_connected_obj, usb_connected);
+static MP_DEFINE_CONST_FUN_OBJ_0(usb_connected_obj, usb_connected);
 
 static mp_obj_t usb_mounted(void) {
     tud_lock();
@@ -35,7 +35,7 @@ static mp_obj_t usb_mounted(void) {
     tud_unlock();
     return mp_obj_new_bool(mounted);
 }
-MP_DEFINE_CONST_FUN_OBJ_0(usb_mounted_obj, usb_mounted);
+static MP_DEFINE_CONST_FUN_OBJ_0(usb_mounted_obj, usb_mounted);
 
 static mp_obj_t usb_suspended(void) {
     tud_lock();
@@ -43,7 +43,7 @@ static mp_obj_t usb_suspended(void) {
     tud_unlock();
     return mp_obj_new_bool(suspended);
 }
-MP_DEFINE_CONST_FUN_OBJ_0(usb_suspended_obj, usb_suspended);
+static MP_DEFINE_CONST_FUN_OBJ_0(usb_suspended_obj, usb_suspended);
 
 static mp_obj_t usb_connect(void) {
     tud_lock();
@@ -54,7 +54,7 @@ static mp_obj_t usb_connect(void) {
     }    
     return mp_const_none;
 }
-MP_DEFINE_CONST_FUN_OBJ_0(usb_connect_obj, usb_connect);
+static MP_DEFINE_CONST_FUN_OBJ_0(usb_connect_obj, usb_connect);
 
 static mp_obj_t usb_disconnect(void) {
     tud_lock();
@@ -66,7 +66,22 @@ static mp_obj_t usb_disconnect(void) {
     }
     return mp_const_none;
 }
-MP_DEFINE_CONST_FUN_OBJ_0(usb_disconnect_obj, usb_disconnect);
+static MP_DEFINE_CONST_FUN_OBJ_0(usb_disconnect_obj, usb_disconnect);
+
+#ifndef NDEBUG
+#include <time.h>
+
+static mp_obj_t usb_reconnect(void) {
+    tud_lock();
+    dcd_event_bus_signal(0, DCD_EVENT_UNPLUGGED, false);
+    tud_disconnect();
+    nanosleep((const struct timespec[]){{0, 100000000L}}, NULL);
+    tud_connect();
+    tud_unlock();
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_0(usb_reconnect_obj, usb_reconnect);
+#endif
 
 static const mp_rom_map_elem_t usb_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__),        MP_ROM_QSTR(MP_QSTR_usb) },
@@ -76,6 +91,9 @@ static const mp_rom_map_elem_t usb_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_suspended),       MP_ROM_PTR(&usb_suspended_obj) },
     { MP_ROM_QSTR(MP_QSTR_connect),         MP_ROM_PTR(&usb_connect_obj) },
     { MP_ROM_QSTR(MP_QSTR_disconnect),      MP_ROM_PTR(&usb_disconnect_obj) },
+    #ifndef NDEBUG
+    { MP_ROM_QSTR(MP_QSTR_reconnect),      MP_ROM_PTR(&usb_reconnect_obj) },
+    #endif
 
 #if CFG_TUD_MSC
     { MP_ROM_QSTR(MP_QSTR_MscDevice),       MP_ROM_PTR(&usb_msc_type) },

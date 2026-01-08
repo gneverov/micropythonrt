@@ -58,9 +58,7 @@ mp_obj_t sntp_sntp(size_t n_args, const mp_obj_t *args) {
     }
 
     LOCK_TCPIP_CORE();
-    if (!enabled) {
-        sntp_stop();
-    }
+    sntp_stop();
     if (items) {
         for (size_t i = 0; i < SNTP_MAX_SERVERS; i++) {
             sntp_setserver(i, (i < len) ? &sntp_servers[i] : NULL);

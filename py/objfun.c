@@ -265,7 +265,8 @@ static mp_obj_t fun_bc_call(mp_obj_t self_in, size_t n_args, size_t n_kw, const 
     INIT_CODESTATE(code_state, self, n_state, n_args, n_kw, args);
 
     // execute the byte code with the correct globals context
-    mp_globals_set(self->context->module.globals);
+    mp_obj_dict_t *globals = mp_obj_module_get_globals(MP_OBJ_FROM_PTR(&self->context->module));
+    mp_globals_set(globals);
     mp_vm_return_kind_t vm_return_kind = mp_execute_bytecode(code_state, MP_OBJ_NULL);
     mp_globals_set(code_state->old_globals);
 
@@ -338,7 +339,8 @@ void mp_obj_fun_bc_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
     }
     if (attr == MP_QSTR___globals__) {
         mp_obj_fun_bc_t *self = MP_OBJ_TO_PTR(self_in);
-        dest[0] = MP_OBJ_FROM_PTR(self->context->module.globals);
+        mp_obj_dict_t *globals = mp_obj_module_get_globals(MP_OBJ_FROM_PTR(&self->context->module));
+        dest[0] = MP_OBJ_FROM_PTR(globals);
     }
 }
 #endif

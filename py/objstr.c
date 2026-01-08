@@ -33,6 +33,8 @@
 #include "py/objlist.h"
 #include "py/runtime.h"
 #include "py/cstack.h"
+#include "py/parseargs.h"
+#include "py/encoding.h"
 
 #if MICROPY_PY_BUILTINS_STR_OP_MODULO
 static mp_obj_t str_modulo_format(mp_obj_t pattern, size_t n_args, const mp_obj_t *args, mp_obj_t dict);
@@ -40,8 +42,6 @@ static mp_obj_t str_modulo_format(mp_obj_t pattern, size_t n_args, const mp_obj_
 
 static mp_obj_t mp_obj_new_bytes_iterator(mp_obj_t str, mp_obj_iter_buf_t *iter_buf);
 static NORETURN void bad_implicit_conversion(mp_obj_t self_in);
-
-static mp_obj_t mp_obj_new_str_type_from_vstr(const mp_obj_type_t *type, vstr_t *vstr);
 
 static void str_check_arg_type(const mp_obj_type_t *self_type, const mp_obj_t arg) {
     // String operations generally need the args type to match the object they're called on,
@@ -802,37 +802,42 @@ static mp_obj_t str_rindex(size_t n_args, const mp_obj_t *args) {
 }
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_rindex_obj, 2, 4, str_rindex);
 
-// TODO: (Much) more variety in args
-static mp_obj_t str_startswith(size_t n_args, const mp_obj_t *args) {
+static mp_obj_t str_with(size_t n_args, const mp_obj_t *args, bool r) {
     const mp_obj_type_t *self_type = mp_obj_get_type(args[0]);
     GET_STR_DATA_LEN(args[0], str, str_len);
-    size_t prefix_len;
-    const char *prefix = mp_obj_str_get_data(args[1], &prefix_len);
-    const byte *start = str;
-    if (n_args > 2) {
-        start = str_index_to_ptr(self_type, str, str_len, args[2], true);
+
+    mp_obj_t *items = (mp_obj_t *)&args[1];
+    size_t len = 1;
+    if (mp_obj_is_obj(args[1]) && mp_obj_is_tuple_compatible(args[1])) {
+        mp_obj_tuple_get(args[1], &len, &items);
     }
-    if (prefix_len + (start - str) > str_len) {
-        return mp_const_false;
+    mp_obj_t start_ix = (n_args > 2) ? args[2] : MP_OBJ_NEW_SMALL_INT(0);
+    mp_obj_t end_ix = (n_args > 3) ? args[3] : MP_OBJ_NEW_SMALL_INT(str_len);
+
+    const byte *start_ptr = str_index_to_ptr(self_type, str, str_len, start_ix, true);
+    const byte *end_ptr = str_index_to_ptr(self_type, str, str_len, end_ix, true);
+
+    for (int i = 0; i < len; i++) {
+        size_t prefix_len;
+        const char *prefix = mp_obj_str_get_data(items[i], &prefix_len);
+        if (prefix_len <= (end_ptr - start_ptr)) {
+            if (memcmp(r ? (end_ptr - prefix_len): start_ptr, prefix, prefix_len) == 0) {
+                return mp_const_true;
+            }
+        }
     }
-    return mp_obj_new_bool(memcmp(start, prefix, prefix_len) == 0);
+    return mp_const_false;
 }
-MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_startswith_obj, 2, 3, str_startswith);
+
+static mp_obj_t str_startswith(size_t n_args, const mp_obj_t *args) {
+    return str_with(n_args, args, false);
+}
+MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_startswith_obj, 2, 4, str_startswith);
 
 static mp_obj_t str_endswith(size_t n_args, const mp_obj_t *args) {
-    GET_STR_DATA_LEN(args[0], str, str_len);
-    size_t suffix_len;
-    const char *suffix = mp_obj_str_get_data(args[1], &suffix_len);
-    if (n_args > 2) {
-        mp_raise_NotImplementedError(MP_ERROR_TEXT("start/end indices"));
-    }
-
-    if (suffix_len > str_len) {
-        return mp_const_false;
-    }
-    return mp_obj_new_bool(memcmp(str + (str_len - suffix_len), suffix, suffix_len) == 0);
+    return str_with(n_args, args, true);
 }
-MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_endswith_obj, 2, 3, str_endswith);
+MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_endswith_obj, 2, 4, str_endswith);
 
 enum { LSTRIP, RSTRIP, STRIP };
 
@@ -1942,31 +1947,28 @@ MP_DEFINE_CONST_FUN_OBJ_1(str_islower_obj, str_islower);
 #if MICROPY_CPYTHON_COMPAT
 // These methods are superfluous in the presence of str() and bytes()
 // constructors.
-// TODO: should accept kwargs too
-static mp_obj_t bytes_decode(size_t n_args, const mp_obj_t *args) {
-    mp_obj_t new_args[2];
-    if (n_args == 1) {
-        new_args[0] = args[0];
-        new_args[1] = MP_OBJ_NEW_QSTR(MP_QSTR_utf_hyphen_8);
-        args = new_args;
-        n_args++;
-    }
-    return mp_obj_str_make_new(&mp_type_str, n_args, 0, args);
-}
-MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(bytes_decode_obj, 1, 3, bytes_decode);
+static mp_obj_t bytes_decode(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs) {
+    const qstr kws[] = { MP_QSTR_, MP_QSTR_encoding, MP_QSTR_errors, 0 };
+    mp_buffer_info_t bufinfo;
+    qstr encoding = MP_QSTR_utf8;
+    qstr errors = MP_QSTR_strict;
+    parse_args_and_kw_map(n_args, args, kwargs, "y*|O&q", kws, &bufinfo, mp_get_encoding, &encoding, &errors);
 
-// TODO: should accept kwargs too
-static mp_obj_t str_encode(size_t n_args, const mp_obj_t *args) {
-    mp_obj_t new_args[2];
-    if (n_args == 1) {
-        new_args[0] = args[0];
-        new_args[1] = MP_OBJ_NEW_QSTR(MP_QSTR_utf_hyphen_8);
-        args = new_args;
-        n_args++;
-    }
-    return bytes_make_new(NULL, n_args, 0, args);
+    return mp_decode(bufinfo.buf, bufinfo.len, encoding, errors);
 }
-MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_encode_obj, 1, 3, str_encode);
+MP_DEFINE_CONST_FUN_OBJ_KW(bytes_decode_obj, 1, bytes_decode);
+
+static mp_obj_t str_encode(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs) {
+    const qstr kws[] = { MP_QSTR_, MP_QSTR_encoding, MP_QSTR_errors, 0 };
+    const char *bytes;
+    size_t len;
+    qstr encoding = MP_QSTR_utf8;
+    qstr errors = MP_QSTR_strict;
+    parse_args_and_kw_map(n_args, args, kwargs, "s#|O&q", kws, &bytes, &len, mp_get_encoding, &encoding, &errors);
+
+    return mp_encode(bytes, len, encoding, errors);
+}
+MP_DEFINE_CONST_FUN_OBJ_KW(str_encode_obj, 1, str_encode);
 #endif
 
 #if MICROPY_PY_BUILTINS_BYTES_HEX
@@ -2065,6 +2067,7 @@ void mp_obj_str_set_data(mp_obj_str_t *str, const byte *data, size_t len) {
 static const mp_rom_map_elem_t array_bytearray_str_bytes_locals_table[] = {
     #if MICROPY_PY_ARRAY || MICROPY_PY_BUILTINS_BYTEARRAY
     { MP_ROM_QSTR(MP_QSTR_append), MP_ROM_PTR(&mp_obj_array_append_obj) },
+    { MP_ROM_QSTR(MP_QSTR_clear), MP_ROM_PTR(&mp_obj_array_clear_obj) },
     { MP_ROM_QSTR(MP_QSTR_extend), MP_ROM_PTR(&mp_obj_array_extend_obj) },
     #endif
     #if MICROPY_PY_BUILTINS_BYTES_HEX
@@ -2126,7 +2129,7 @@ static const mp_rom_map_elem_t array_bytearray_str_bytes_locals_table[] = {
 #endif
 
 #if MICROPY_PY_ARRAY || MICROPY_PY_BUILTINS_BYTEARRAY
-#define TABLE_ENTRIES_ARRAY 2
+#define TABLE_ENTRIES_ARRAY 3
 #else
 #define TABLE_ENTRIES_ARRAY 0
 #endif
@@ -2234,7 +2237,7 @@ mp_obj_t mp_obj_new_str_via_qstr(const char *data, size_t len) {
 // Create a str/bytes object from the given vstr.  The vstr buffer is resized to
 // the exact length required and then reused for the str/bytes object.  The vstr
 // is cleared and can safely be passed to vstr_free if it was heap allocated.
-static mp_obj_t mp_obj_new_str_type_from_vstr(const mp_obj_type_t *type, vstr_t *vstr) {
+mp_obj_t mp_obj_new_str_type_from_vstr(const mp_obj_type_t *type, vstr_t *vstr) {
     // if not a bytes object, look if a qstr with this data already exists
     if (type == &mp_type_str) {
         qstr q = qstr_find_strn(vstr->buf, vstr->len);

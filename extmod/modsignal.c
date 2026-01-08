@@ -7,46 +7,39 @@
 #include <unistd.h>
 #include "morelib/thread.h"
 
-#include "FreeRTOS.h"
-#include "task.h"
-
-#include "./modsignal.h"
+#include "extmod/modsignal.h"
 #include "shared/runtime/interrupt_char.h"
 #include "py/gc.h"
 #include "py/mperrno.h"
 #include "py/runtime.h"
 
 
-static SemaphoreHandle_t signal_mutex;
-
 static mp_obj_t signal_handlers[_NSIG];
 
-static mp_obj_t signal_default_int_handler(mp_obj_t signum_in) {
-    mp_sched_keyboard_interrupt();
+static mp_obj_t signal_default_int_handler(mp_obj_t signum_in, mp_obj_t frame_in) {
+    int signum = MP_OBJ_SMALL_INT_VALUE(signum_in);
+    if (signum == SIGQUIT) {
+        exit(0);
+    } else if (mp_interrupt_char != -1) {
+        mp_raise_type(&mp_type_KeyboardInterrupt);
+    }
     return mp_const_none;
 }
-MP_DEFINE_CONST_FUN_OBJ_1(signal_default_int_handler_obj, signal_default_int_handler);
+static MP_DEFINE_CONST_FUN_OBJ_2(signal_default_int_handler_obj, signal_default_int_handler);
+
+static mp_obj_t signal_run(mp_obj_t signum_in) {
+    int signum = MP_OBJ_SMALL_INT_VALUE(signum_in);
+    mp_obj_t handler_obj = signal_handlers[signum];
+    if (handler_obj) {
+        mp_call_function_2(handler_obj, signum_in, mp_const_none);
+    }
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(signal_run_obj, signal_run);
 
 static void signal_handler(int signum) {
-    xSemaphoreTake(signal_mutex, portMAX_DELAY);
-    mp_obj_t handler_obj = signal_handlers[signum];
-
-    if (MP_OBJ_TO_PTR(handler_obj) == &signal_default_int_handler_obj) {
-        if (signum == SIGINT) {
-            if (mp_interrupt_char != -1) {
-                mp_sched_keyboard_interrupt();
-            }
-        } else if (signum == SIGQUIT) {
-            exit(0);
-        }
-        mp_task_interrupt();
-    }
-    #if MICROPY_ENABLE_SCHEDULER
-    else {
-        mp_sched_schedule(handler_obj, MP_OBJ_NEW_SMALL_INT(signum));
-    }
-    #endif
-    xSemaphoreGive(signal_mutex);
+    mp_sched_schedule(MP_OBJ_FROM_PTR(&signal_run_obj), MP_OBJ_NEW_SMALL_INT(signum));
+    mp_task_interrupt();
     signal(signum, signal_handler);
 }
 
@@ -79,14 +72,12 @@ static mp_obj_t signal_signal(mp_obj_t signum_in, mp_obj_t handler_in) {
     }
     #endif
 
-    xSemaphoreTake(signal_mutex, portMAX_DELAY);
     mp_obj_t old_handler_obj = signal_handlers[signum];
     _sig_func_ptr old_handler = signal(signum, handler);
     if (old_handler == SIG_ERR) {
         mp_raise_OSError(errno);
     }
     signal_handlers[signum] = handler_in;
-    xSemaphoreGive(signal_mutex);
 
     if (old_handler == SIG_DFL) {
         return MP_OBJ_NEW_SMALL_INT(SIG_DFL);
@@ -104,10 +95,8 @@ static mp_obj_t signal_getsignal(mp_obj_t signum_in) {
     if ((signum < 0) || (signum >= _NSIG)) {
         mp_raise_ValueError(NULL);
     }
-    xSemaphoreTake(signal_mutex, portMAX_DELAY);
     mp_obj_t handler_obj = signal_handlers[signum];
-    xSemaphoreGive(signal_mutex);
-    return handler_obj;
+    return handler_obj ? handler_obj : MP_OBJ_NEW_SMALL_INT(SIG_DFL);
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(signal_getsignal_obj, signal_getsignal);
 
@@ -133,7 +122,6 @@ const mp_obj_module_t mp_module_signal = {
 MP_REGISTER_MODULE(MP_QSTR_signal, mp_module_signal);
 
 void signal_init(void) {
-    signal_mutex = xSemaphoreCreateMutex();
     signal_signal(MP_OBJ_NEW_SMALL_INT(SIGINT), MP_OBJ_FROM_PTR(&signal_default_int_handler_obj));
     signal_signal(MP_OBJ_NEW_SMALL_INT(SIGQUIT), MP_OBJ_FROM_PTR(&signal_default_int_handler_obj));
     struct termios termios;
@@ -149,12 +137,8 @@ void signal_deinit(void) {
     tcsetattr(0, TCSANOW, &termios);
     signal_signal(MP_OBJ_NEW_SMALL_INT(SIGINT), MP_OBJ_NEW_SMALL_INT(SIG_DFL));
     signal_signal(MP_OBJ_NEW_SMALL_INT(SIGQUIT), MP_OBJ_NEW_SMALL_INT(SIG_DFL));
-    vSemaphoreDelete(signal_mutex);
-    signal_mutex = NULL;
 }
 
 void signal_collect(void) {
-    xSemaphoreTake(signal_mutex, portMAX_DELAY);
     gc_collect_root(signal_handlers, _NSIG);
-    xSemaphoreGive(signal_mutex);
 }

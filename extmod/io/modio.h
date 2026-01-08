@@ -58,8 +58,8 @@ extern const mp_obj_type_t mp_type_io_buffer;
 // Type for TextIOWrapper
 extern const mp_obj_type_t mp_type_io_text;
 
-// Function which generates the IOBase Python class
-mp_obj_t mp_type_io_base(void);
+// Type for IOBase
+extern const mp_obj_type_t mp_type_io_base;
 
 void mp_io_print(void *data, const char *str, size_t len);
 

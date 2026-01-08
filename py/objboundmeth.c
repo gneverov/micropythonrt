@@ -129,10 +129,16 @@ static void bound_meth_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
 #define BOUND_METH_TYPE_ATTR
 #endif
 
+static mp_obj_t bound_meth_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+    mp_arg_check_num(n_args, n_kw, 2, 2, false);
+    return mp_obj_new_bound_meth(args[0], args[1]);
+}
+
 MP_DEFINE_CONST_OBJ_TYPE(
     mp_type_bound_meth,
     MP_QSTR_bound_method,
     MP_TYPE_FLAG_NONE,
+    make_new, bound_meth_make_new,
     BOUND_METH_TYPE_PRINT
     BOUND_METH_TYPE_ATTR
     call, bound_meth_call,

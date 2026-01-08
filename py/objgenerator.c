@@ -193,7 +193,8 @@ mp_vm_return_kind_t mp_obj_gen_resume(mp_obj_t self_in, mp_obj_t send_value, mp_
 
     // Set up the correct globals context for the generator and execute it
     self->code_state.old_globals = mp_globals_get();
-    mp_globals_set(self->code_state.fun_bc->context->module.globals);
+    mp_obj_dict_t *globals = mp_obj_module_get_globals(MP_OBJ_FROM_PTR(&self->code_state.fun_bc->context->module));
+    mp_globals_set(globals);
 
     mp_vm_return_kind_t ret_kind;
 

@@ -236,7 +236,7 @@ static void frame_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
             dest[0] = MP_OBJ_FROM_PTR(o->code);
             break;
         case MP_QSTR_f_globals:
-            dest[0] = MP_OBJ_FROM_PTR(o->code_state->fun_bc->context->module.globals);
+            dest[0] = MP_OBJ_FROM_PTR(mp_obj_module_get_globals(o->code_state->fun_bc->context->module));
             break;
         case MP_QSTR_f_lasti:
             dest[0] = MP_OBJ_NEW_SMALL_INT(o->lasti);

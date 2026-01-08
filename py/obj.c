@@ -303,45 +303,54 @@ bool mp_obj_equal(mp_obj_t o1, mp_obj_t o2) {
     return mp_obj_is_true(mp_obj_equal_not_equal(MP_BINARY_OP_EQUAL, o1, o2));
 }
 
-mp_int_t mp_obj_get_int(mp_const_obj_t arg) {
+static mp_const_obj_t mp_obj_convert_int(mp_const_obj_t arg) {
     // This function essentially performs implicit type conversion to int
     // Note that Python does NOT provide implicit type conversion from
     // float to int in the core expression language, try some_list[1.0].
-    mp_int_t val;
-    if (!mp_obj_get_int_maybe(arg, &val)) {
+    mp_const_obj_t result = arg;
+    if (arg == mp_const_false) {
+        result = MP_OBJ_NEW_SMALL_INT(0);
+    } else if (arg == mp_const_true) {
+        result = MP_OBJ_NEW_SMALL_INT(1);
+    } else if (!mp_obj_is_int(arg)) {
+        result = mp_unary_op(MP_UNARY_OP_INT_MAYBE, (mp_obj_t)arg);
+    }
+    if (result == MP_OBJ_NULL) {
         mp_raise_TypeError_int_conversion(arg);
     }
-    return val;
+    return result;
+}
+
+mp_int_t mp_obj_get_int(mp_const_obj_t arg) {
+    arg = mp_obj_convert_int(arg);
+    if (arg == MP_OBJ_NULL) {
+        mp_raise_TypeError_int_conversion(arg);
+    }
+    return mp_obj_int_get_checked(arg);
+}
+
+mp_uint_t mp_obj_get_uint(mp_const_obj_t arg) {
+    arg = mp_obj_convert_int(arg);
+    return mp_obj_int_get_uint_checked(arg);
 }
 
 mp_int_t mp_obj_get_int_truncated(mp_const_obj_t arg) {
-    if (mp_obj_is_int(arg)) {
-        return mp_obj_int_get_truncated(arg);
-    } else {
-        return mp_obj_get_int(arg);
+    arg = mp_obj_convert_int(arg);
+    if (arg == MP_OBJ_NULL) {
+        mp_raise_TypeError_int_conversion(arg);
     }
+    return mp_obj_int_get_truncated(arg);
 }
 
 // returns false if arg is not of integral type
 // returns true and sets *value if it is of integral type
 // can throw OverflowError if arg is of integral type, but doesn't fit in a mp_int_t
 bool mp_obj_get_int_maybe(mp_const_obj_t arg, mp_int_t *value) {
-    if (arg == mp_const_false) {
-        *value = 0;
-    } else if (arg == mp_const_true) {
-        *value = 1;
-    } else if (mp_obj_is_small_int(arg)) {
-        *value = MP_OBJ_SMALL_INT_VALUE(arg);
-    } else if (mp_obj_is_exact_type(arg, &mp_type_int)) {
-        *value = mp_obj_int_get_checked(arg);
-    } else {
-        arg = mp_unary_op(MP_UNARY_OP_INT_MAYBE, (mp_obj_t)arg);
-        if (arg != MP_OBJ_NULL) {
-            *value = mp_obj_int_get_checked(arg);
-        } else {
-            return false;
-        }
+    arg = mp_obj_convert_int(arg);
+    if (arg == MP_OBJ_NULL) {
+        return false;
     }
+    *value = mp_obj_int_get_checked(arg);
     return true;
 }
 
@@ -591,7 +600,22 @@ bool mp_get_buffer(mp_obj_t obj, mp_buffer_info_t *bufinfo, mp_uint_t flags) {
         return true;
     }
     if (flags & MP_BUFFER_RAISE_IF_UNSUPPORTED) {
-        mp_raise_TypeError(MP_ERROR_TEXT("object with buffer protocol required"));
+        mp_raise_msg_varg(&mp_type_TypeError, MP_ERROR_TEXT("a bytes-like object is required, not '%q'"), (qstr)type->name);
     }
     return false;
+}
+
+mp_obj_dict_t *mp_obj_module_get_globals(mp_obj_t module) {
+    mp_obj_module_t *self = MP_OBJ_TO_PTR(module);
+    mp_obj_dict_t *globals = self->globals;
+    if (self->freeze_index) {
+        mp_obj_list_t *globals_table = MP_STATE_VM(freeze_globals_table);
+        assert(globals_table);
+        if ((self->freeze_index - 1) < globals_table->len) {
+            globals = globals_table->items[self->freeze_index - 1];
+        } else {
+            mp_printf(&mp_plat_print, "Error: freeze_index %d of module '%s' is out of range (len %d)\n", self->freeze_index - 1, mp_obj_str_get_str(mp_load_attr(module, MP_QSTR___name__)), globals_table->len);
+        }
+    }
+    return globals;
 }

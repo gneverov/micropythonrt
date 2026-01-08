@@ -22,7 +22,7 @@ static int mp_io_text_readchar(mp_obj_io_buffer_t *self, vstr_t *vstr) {
     char buf[4];
     int c = fgetc(self->file);
     if (c == EOF) {
-        return EOF;
+        return feof(self->file) ? 0 : -1;
     }
     buf[0] = c;    
 
@@ -50,32 +50,33 @@ static int mp_io_text_readchar(mp_obj_io_buffer_t *self, vstr_t *vstr) {
     while (i < n) {
         c = fgetc(self->file);
         if (c == EOF) {
-            n = 0;
             break;
         }        
         buf[i] = c;
         // in the middle of a sequence
         if (buf[i] < 0x80) {
             // error
-            n = 0;
+            break;
         } else if (buf[i] < 0xC0) {
             // continuation byte
         } else {
             // error
-            n = 0;
+            break;
         }
+        i++;
     }
  
-    if (n == 0) {
+    if (i != n) {
         // error occurred, emit surrogate escape
         char *dst = vstr_add_len(vstr, 2);
         dst[0] = 0xDC;
         dst[1] = 0x80 | (buf[0] & 0x7F);
-    } else if (i == n) {
+        return 1;
+    } else {
         // emit valid utf-8 sequence
         vstr_add_strn(vstr, buf, n);
+        return n;
     }
-    return buf[0];
 }
 
 
@@ -90,14 +91,15 @@ static mp_obj_t mp_io_text_read_until(size_t n_args, const mp_obj_t *args, int n
         if (out_buffer.len == out_buffer.alloc) {
             vstr_hint_size(&out_buffer, MP_OS_DEFAULT_BUFFER_SIZE);
         }
-        int ret = mp_io_text_readchar(self, &out_buffer);
-        if (ret != EOF) {
+        int ret;
+        MP_OS_CALL(ret, mp_io_text_readchar, self, &out_buffer);
+        if (ret > 0) {
             count++;
             if (ret == nl) {
                 break;
             }
         }
-        else if (feof(self->file) || out_buffer.len) {
+        else if ((ret == 0) || out_buffer.len) {
             break;
         }
         else {
@@ -117,7 +119,7 @@ static mp_obj_t mp_io_text_readline(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_io_text_readline_obj, 1, 2, mp_io_text_readline);
 
-static size_t mp_io_text_writechar(mp_obj_io_buffer_t *self, const char *buf, size_t len) {
+static int mp_io_text_writechar(mp_obj_io_buffer_t *self, const char *buf, size_t len) {
     assert(len > 0);
     size_t n = -1;  // parsing an n-byte code point sequence
     // at the start of a new sequence
@@ -136,10 +138,8 @@ static size_t mp_io_text_writechar(mp_obj_io_buffer_t *self, const char *buf, si
         // 4 byte sequence
         n = 4;
     } else {
-        // error;
-    }
-    if (n > len) {
-        mp_raise_type(&mp_type_UnicodeError);
+        errno = EILSEQ;
+        return -1;
     }
     size_t m = n;
     if (buf[0] == 0xDC) {
@@ -148,7 +148,7 @@ static size_t mp_io_text_writechar(mp_obj_io_buffer_t *self, const char *buf, si
     }
     for (size_t i = 0; i < m; i++) {
         if (fputc(buf[i], self->file) == EOF) {
-            return EOF;
+            return -1;
         }
     }
     return n;
@@ -162,10 +162,15 @@ static mp_obj_t mp_io_text_write(mp_obj_t self_in, mp_obj_t b_in) {
     size_t bw = 0;
     size_t cw = 0;
     while (bw < len) {
-        size_t ret = mp_io_text_writechar(self, buf + bw, len - bw);
-        if (ret != EOF) {
+        size_t ret;
+        MP_OS_CALL(ret, mp_io_text_writechar, self, buf + bw, len - bw);
+        if (ret >= 0) {
+            assert(ret > 0);
             bw += ret;
             cw++;
+        }        
+        else if (errno == EILSEQ) {
+            mp_raise_type(&mp_type_UnicodeError);
         }
         else {
             mp_raise_OSError(errno);

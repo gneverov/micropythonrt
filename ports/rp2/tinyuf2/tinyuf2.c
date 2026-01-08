@@ -128,7 +128,7 @@ static int tinyuf2_pwrite(void *ctx, const void *buf, size_t size, off_t offset)
     return count;
 }
 
-static int tinyuf2_read(void *ctx, void *buf, size_t size, int flags) {
+static int tinyuf2_read(void *ctx, void *buf, size_t size) {
     struct tinyuf2_file *file = ctx;
     int ret = tinyuf2_pread(ctx, buf, size, file->ptr);
     if (ret >= 0) {
@@ -137,7 +137,7 @@ static int tinyuf2_read(void *ctx, void *buf, size_t size, int flags) {
     return ret;
 }
 
-static int tinyuf2_write(void *ctx, const void *buf, size_t size, int flags) {
+static int tinyuf2_write(void *ctx, const void *buf, size_t size) {
     struct tinyuf2_file *file = ctx;
     int ret = tinyuf2_pwrite(ctx, buf, size, file->ptr);
     if (ret >= 0) {
@@ -156,7 +156,7 @@ static const struct vfs_file_vtable tinyuf2_vtable = {
     .write = tinyuf2_write,
 };
 
-static void *tinyuf2_open(const void *ctx, dev_t dev, mode_t mode) {
+static void *tinyuf2_open(const void *ctx, dev_t dev, int flags) {
     struct tinyuf2_file *file = NULL;
     dev_lock();
     if (tinyuf2_file) {
@@ -169,7 +169,7 @@ static void *tinyuf2_open(const void *ctx, dev_t dev, mode_t mode) {
         dev_unlock();
         return NULL;
     }
-    vfs_file_init(&file->base, &tinyuf2_vtable, mode | S_IFBLK);
+    vfs_file_init(&file->base, &tinyuf2_vtable, O_RDWR);
     tinyuf2_file = file;
     dev_unlock();
 

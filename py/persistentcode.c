@@ -656,7 +656,7 @@ void mp_raw_code_save_file(mp_compiled_module_t *cm, qstr filename) {
     int fd = open(qstr_str(filename), O_WRONLY | O_CREAT | O_TRUNC, 0644);
     MP_THREAD_GIL_ENTER();
     if (fd < 0) {
-        mp_raise_OSError_with_filename(errno, qstr_str(filename));
+        mp_raise_OSError_with_filename(errno, MP_OBJ_NEW_QSTR(filename));
     }
     mp_print_t fd_print = {(void *)(intptr_t)fd, fd_print_strn};
     mp_raw_code_save(cm, &fd_print);

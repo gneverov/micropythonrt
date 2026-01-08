@@ -92,7 +92,7 @@ static mp_obj_t native_base_init_wrapper(size_t n_args, const mp_obj_t *args, mp
     self->subobj[0] = MP_OBJ_TYPE_GET_SLOT(native_base, make_new)(native_base, n_args - 1, kw_args->used, args + 1);
     return mp_const_none;
 }
-static MP_DEFINE_CONST_FUN_OBJ_KW(native_base_init_wrapper_obj, 1, native_base_init_wrapper);
+MP_DEFINE_CONST_FUN_OBJ_KW(native_base_init_wrapper_obj, 1, native_base_init_wrapper);
 
 #if !MICROPY_CPYTHON_COMPAT
 static
@@ -108,6 +108,9 @@ mp_obj_instance_t *mp_obj_new_instance(const mp_obj_type_t *class, const mp_obj_
     if (num_native_bases != 0) {
         o->subobj[0] = MP_OBJ_FROM_PTR(&native_base_init_wrapper_obj);
     }
+    #if MICROPY_PY_WEAKREF
+    o->weakref = NULL;
+    #endif
     return o;
 }
 
@@ -170,9 +173,9 @@ static void mp_obj_class_lookup(struct class_lookup_data *lookup, const mp_obj_t
                     mp_obj_t obj_obj;
                     if (obj != NULL && mp_obj_is_native_type(type) && type != &mp_type_object /* object is not a real type */) {
                         // If we're dealing with native base class, then it applies to native sub-object
-                        obj_obj = obj->subobj[0];
+                        obj_obj = (type->flags & MP_TYPE_FLAG_TRUE_SELF) ? MP_OBJ_FROM_PTR(obj) : obj->subobj[0];
                         #if MICROPY_BUILTIN_METHOD_CHECK_SELF_ARG
-                        if (obj_obj == MP_OBJ_FROM_PTR(&native_base_init_wrapper_obj)) {
+                        if (obj->subobj[0] == MP_OBJ_FROM_PTR(&native_base_init_wrapper_obj)) {
                             // But we shouldn't attempt lookups on object that is not yet instantiated.
                             mp_raise_msg(&mp_type_AttributeError, MP_ERROR_TEXT("call super().__init__() first"));
                         }
@@ -1159,8 +1162,8 @@ mp_obj_t mp_obj_new_type(qstr name, mp_obj_t bases_tuple, mp_obj_t locals_dict) 
         #if ENABLE_SPECIAL_ACCESSORS
         if (mp_obj_is_instance_type(t)) {
             t->flags |= MP_TYPE_FLAG_IS_SUBCLASSED;
-            base_flags |= t->flags & MP_TYPE_FLAG_HAS_SPECIAL_ACCESSORS;
         }
+        base_flags |= t->flags & MP_TYPE_FLAG_HAS_SPECIAL_ACCESSORS;
         #endif
     }
 

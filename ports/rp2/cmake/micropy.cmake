@@ -210,7 +210,12 @@ if(MICROPY_PY_LWIP)
         pico_lwip_contrib_freertos
         # pico_lwip_freertos
         pico_lwip_mdns
+        pico_lwip_snmp
         pico_lwip_sntp
+    )
+    set_source_files_properties(
+        ${PICO_LWIP_PATH}/src/apps/snmp/snmp_traps.c
+        PROPERTIES COMPILE_OPTIONS -Wno-error=dangling-pointer
     )
     target_sources(${MICROPY_TARGET} PRIVATE
         ${PICO_LWIP_PATH}/src/api/err.c
@@ -402,7 +407,7 @@ set(MICROPY_CROSS_FLAGS -march=armv6m)
 
 # Set the frozen manifest file
 if(NOT MICROPY_FROZEN_MANIFEST)
-    set(MICROPY_FROZEN_MANIFEST ${MICROPY_PORT_DIR}/boards/manifest.py)
+    # set(MICROPY_FROZEN_MANIFEST ${MICROPY_PORT_DIR}/boards/manifest.py)
 endif()
 
 target_sources(${MICROPY_TARGET} PRIVATE
@@ -416,6 +421,7 @@ target_sources(${MICROPY_TARGET} PRIVATE
 
 if(MICROPY_SSL_MBEDTLS)
     target_link_libraries(${MICROPY_TARGET} pico_mbedtls)
+    target_include_directories(${MICROPY_TARGET} PRIVATE ${MICROPY_PORT_DIR}/mbedtls)
 endif()
 
 target_link_libraries(${MICROPY_TARGET} usermod)

@@ -5,6 +5,7 @@
 #include "morelib/devfs.h"
 #include "morelib/fatfs.h"
 #include "morelib/littlefs.h"
+#include "morelib/loop.h"
 #include "morelib/mem.h"
 #include "morelib/mtdblk.h"
 #include "morelib/tty.h"
@@ -18,8 +19,10 @@
 const struct dev_driver *dev_drvs[] = {
     &mem_drv,
     &tty_drv,
+    &loop_drv,
     &mtd_drv,
     &mtdblk_drv,
+    &sdcard_drv,
     &term_uart_drv,
     &term_usb_drv,
     &tinyuf2_drv,
@@ -59,8 +62,11 @@ const struct devfs_entry devfs_entries[] = {
 
     { "/uf2", S_IFBLK, DEV_UF2 },
 
-    { "/sdcard0", S_IFBLK, DEV_MMCBLK0 | 14 },
-    { "/sdcard1", S_IFBLK, DEV_MMCBLK0 | 0x80 | 6 },
+    { "/sdcard0", S_IFBLK, DEV_MMCBLK0 | 0x00 | 17 },
+    { "/sdcard1", S_IFBLK, DEV_MMCBLK0 | 0x80 | 9 },
+
+    { "/loop0", S_IFBLK, DEV_LOOP0 },
+    { "/loop1", S_IFBLK, DEV_LOOP1 },
 };
 
 const size_t devfs_num_entries = sizeof(devfs_entries) / sizeof(devfs_entries[0]);
@@ -73,3 +79,15 @@ const struct vfs_filesystem *vfs_fss[] = {
 };
 
 const size_t vfs_num_fss = sizeof(vfs_fss) / sizeof(vfs_fss[0]);
+
+#if MICROPY_PY_LWIP
+#include "morelib/lwip/lwip.h"
+
+const struct socket_family *socket_families[] = {
+    &lwip_ipv4_af,
+    &lwip_ipv6_af,
+};
+#else
+const struct socket_family *socket_families[] = {};
+#endif
+const size_t socket_num_families = sizeof(socket_families) / sizeof(socket_families[0]);

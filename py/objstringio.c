@@ -162,6 +162,29 @@ static mp_uint_t stringio_ioctl(mp_obj_t o_in, mp_uint_t request, uintptr_t arg,
 
 #define STREAM_TO_CONTENT_TYPE(o) (((o)->base.type == &mp_type_stringio) ? &mp_type_str : &mp_type_bytes)
 
+static mp_obj_t stringio_readline(size_t n_args, const mp_obj_t *args) {
+    mp_obj_stringio_t *o = MP_OBJ_TO_PTR(args[0]);
+    check_stringio_is_open(o);
+    if (o->vstr->len <= o->pos) {  // read to EOF, or seeked to EOF or beyond
+        return mp_const_empty_bytes;
+    }
+    mp_uint_t remaining = o->vstr->len - o->pos;
+    mp_int_t size = remaining;
+    if (n_args > 1) {
+        size = MP_OBJ_SMALL_INT_VALUE(args[1]);
+    }
+    if (size > remaining) {
+        size = remaining;
+    }
+    char *begin = o->vstr->buf + o->pos;
+    char *end = memchr(begin, '\n', size);
+    end = end ? end + 1: begin + size;
+    mp_obj_t line = mp_obj_new_str_copy(STREAM_TO_CONTENT_TYPE(o), (byte *)begin, end - begin);
+    o->pos += end - begin;
+    return line;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(stringio_readline_obj, 1, 2, stringio_readline);
+
 static mp_obj_t stringio_getvalue(mp_obj_t self_in) {
     mp_obj_stringio_t *self = MP_OBJ_TO_PTR(self_in);
     check_stringio_is_open(self);
@@ -217,8 +240,10 @@ static mp_obj_t stringio_make_new(const mp_obj_type_t *type_in, size_t n_args, s
 
 static const mp_rom_map_elem_t stringio_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_read), MP_ROM_PTR(&mp_stream_read_obj) },
+    { MP_ROM_QSTR(MP_QSTR_read1), MP_ROM_PTR(&mp_stream_read_obj) },
     { MP_ROM_QSTR(MP_QSTR_readinto), MP_ROM_PTR(&mp_stream_readinto_obj) },
-    { MP_ROM_QSTR(MP_QSTR_readline), MP_ROM_PTR(&mp_stream_unbuffered_readline_obj) },
+    { MP_ROM_QSTR(MP_QSTR_readinto1), MP_ROM_PTR(&mp_stream_readinto_obj) },
+    { MP_ROM_QSTR(MP_QSTR_readline), MP_ROM_PTR(&stringio_readline_obj) },
     { MP_ROM_QSTR(MP_QSTR_write), MP_ROM_PTR(&mp_stream_write_obj) },
     { MP_ROM_QSTR(MP_QSTR_seek), MP_ROM_PTR(&mp_stream_seek_obj) },
     { MP_ROM_QSTR(MP_QSTR_tell), MP_ROM_PTR(&mp_stream_tell_obj) },

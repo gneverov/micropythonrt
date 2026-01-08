@@ -34,6 +34,7 @@
 #include "mpthreadport.h"
 
 
+#if MICROPY_PY_THREAD
 uint32_t mp_thread_begin_atomic_section(void) {
     taskENTER_CRITICAL();
     return 0;
@@ -43,13 +44,8 @@ void mp_thread_end_atomic_section(uint32_t state) {
     taskEXIT_CRITICAL();
 }
 
-#if MICROPY_PY_THREAD || 1
-struct mp_thread_entry_shim {
-    void *(*entry)(void *);
-    void *arg;
-};
-
-static bool mp_thread_iterate(thread_t **pthread, mp_state_thread_t **pstate) {
+__attribute__((visibility("hidden")))
+bool mp_thread_iterate(thread_t **pthread, mp_state_thread_t **pstate) {
     while (thread_iterate(pthread)) {
         thread_t *thread = *pthread;
         *pstate = pvTaskGetThreadLocalStoragePointer(thread->handle, TLS_INDEX_APP);
@@ -60,13 +56,6 @@ static bool mp_thread_iterate(thread_t **pthread, mp_state_thread_t **pstate) {
     }
     *pstate = NULL;
     return false;
-}
-
-static void mp_thread_entry(void *pvParameters) {
-    struct mp_thread_entry_shim *pshim = pvParameters;
-    struct mp_thread_entry_shim shim = *pshim;
-    free(pshim);
-    shim.entry(shim.arg);
 }
 
 // Initialise threading support.
@@ -101,6 +90,12 @@ void mp_thread_gc_others(void) {
     while (mp_thread_iterate(&thread, &state)) {
         TaskHandle_t handle = thread_suspend(thread);
         if (handle != xTaskGetCurrentTaskHandle()) {
+            // Trace root pointers.  This relies on the root pointers being organised
+            // correctly in the mp_state_ctx structure.
+            void **root_start = (void **)&state->dict_locals;
+            void **root_end = (void **)(state + 1);
+            gc_collect_root(root_start, root_end - root_start);
+
             void **stack_top = (void **)task_pxTopOfStack(handle);
             void **stack_bottom = (void **)state->stack_top;
             gc_collect_root(stack_top, stack_bottom - stack_top);
@@ -108,46 +103,6 @@ void mp_thread_gc_others(void) {
         thread_resume(handle);
         thread_detach(thread);
     }
-}
-
-mp_uint_t mp_thread_get_id(void) {
-    thread_t *thread = thread_current();
-    return thread->id;
-}
-
-mp_uint_t mp_thread_create(void *(*entry)(void *), void *arg, size_t *stack_size) {
-    if (*stack_size == 0) {
-        *stack_size = 4096; // default stack size
-    } else if (*stack_size < 2048) {
-        *stack_size = 2048; // minimum stack size
-    }
-
-    // Round stack size to a multiple of the word size.
-    size_t stack_num_words = *stack_size / sizeof(StackType_t);
-    *stack_size = stack_num_words * sizeof(StackType_t);
-
-    // Create thread on core1.
-    struct mp_thread_entry_shim *shim = malloc(sizeof(struct mp_thread_entry_shim));
-    shim->entry = entry;
-    shim->arg = arg;
-    thread_t *thread = thread_create(mp_thread_entry, "core1", stack_num_words, shim, 1);
-    if (!thread) {
-        free(shim);
-        mp_raise_OSError(MP_ENOMEM);
-    }
-
-    // Adjust stack_size to provide room to recover from hitting the limit.
-    *stack_size -= 512;
-    UBaseType_t id = thread->id;
-    thread_detach(thread);
-    return id;
-}
-
-void mp_thread_start(void) {
-}
-
-void mp_thread_finish(void) {
-    mp_thread_set_state(NULL);
 }
 
 void mp_thread_mutex_init(mp_thread_mutex_t *m) {

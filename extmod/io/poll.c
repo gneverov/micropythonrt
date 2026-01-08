@@ -64,7 +64,7 @@ mp_poll_t *mp_poll_get(mp_obj_t self_in) {
 
 int mp_poll_fileno(mp_poll_t *self) {
     if (self->fd < 0) {
-        self->fd = poll_file_fd(self->file, 0);
+        self->fd = poll_file_fd(self->file);
     }
     return self->fd;
 }

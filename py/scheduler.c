@@ -110,7 +110,7 @@ static inline void mp_sched_run_pending(void) {
         MP_STATE_VM(sched_idx) = IDX_MASK(MP_STATE_VM(sched_idx) + 1);
         --MP_STATE_VM(sched_len);
         MICROPY_END_ATOMIC_SECTION(atomic_state);
-        mp_call_function_1_protected(item.func, item.arg);
+        mp_call_function_n_protected(item.func, 1, &item.arg);
     } else {
         MICROPY_END_ATOMIC_SECTION(atomic_state);
     }

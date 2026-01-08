@@ -8,6 +8,7 @@
 #include "extmod/io/modio.h"
 #include "extmod/modos_newlib.h"
 #include "py/builtin.h"
+#include "py/extras.h"
 #include "py/parseargs.h"
 #include "py/runtime.h"
 
@@ -30,10 +31,6 @@ mp_import_stat_t mp_import_stat(const char *path) {
     return MP_IMPORT_STAT_NO_EXIST;
 }
 
-static inline mp_obj_t mp_obj_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
-    return MP_OBJ_TYPE_GET_SLOT(type, make_new)(type, n_args, n_kw, args);
-}
-
 mp_obj_t mp_builtin_open(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
     mp_obj_t file;
     mp_obj_t mode = MP_OBJ_NEW_QSTR(MP_QSTR_r);
@@ -41,10 +38,10 @@ mp_obj_t mp_builtin_open(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_a
     mp_obj_t encoding = mp_const_none;
     mp_obj_t errors = mp_const_none;
     mp_obj_t newline = mp_const_none;
-    mp_obj_t closefd = mp_const_true;
+    int closefd = 1;
     mp_obj_t opener = mp_const_none;
     const qstr kws[] = { MP_QSTR_file, MP_QSTR_mode, MP_QSTR_buffering, MP_QSTR_encoding, MP_QSTR_errors, MP_QSTR_newline, MP_QSTR_closefd, MP_QSTR_opener, 0 };
-    parse_args_and_kw_map(n_args, pos_args, kw_args, "O|OiOOOOO", kws, &file, &mode, &buffering, &encoding, &errors, &newline, &closefd, &opener);
+    parse_args_and_kw_map(n_args, pos_args, kw_args, "O|OiOOOpO", kws, &file, &mode, &buffering, &encoding, &errors, &newline, &closefd, &opener);
 
     const char *mode_str = mp_obj_str_get_str(mode);
     bool text = true;
@@ -63,10 +60,10 @@ mp_obj_t mp_builtin_open(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_a
     }
     if (!text) {
         if (buffering == 0) {
-            mp_obj_t file_args[4] = { file, mode, closefd, opener };
+            mp_obj_t file_args[4] = { file, mode, mp_obj_new_bool(closefd), opener };
             return mp_obj_make_new(&mp_type_io_file, 4, 0, file_args);
         }
-        else if (buffering > 1) {
+        else if (buffering > 0) {
             return mp_io_buffer_new(&mp_type_io_buffer, file, mode, buffering, closefd);
         }
         else {
@@ -120,22 +117,8 @@ void mp_sys_init_stdio(void) {
     mp_sys_stderr_obj.file = stderr;
 }
 
-// module
-static mp_obj_t mp_io_getattr(mp_obj_t attr) {
-    switch (MP_OBJ_QSTR_VALUE(attr)) {
-        case MP_QSTR_IOBase: {
-            return mp_type_io_base();
-        }
-        default: {
-            return MP_OBJ_NULL;
-        }
-    }
-}
-static MP_DEFINE_CONST_FUN_OBJ_1(mp_io_getattr_obj, mp_io_getattr);
-
 static const mp_rom_map_elem_t mp_module_io_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__),    MP_ROM_QSTR(MP_QSTR_io) },
-    { MP_ROM_QSTR(MP_QSTR___getattr__), MP_ROM_PTR(&mp_io_getattr_obj) },
     { MP_ROM_QSTR(MP_QSTR_open),        MP_ROM_PTR(&mp_builtin_open_obj) },
 
     { MP_ROM_QSTR(MP_QSTR_StringIO),    MP_ROM_PTR(&mp_type_stringio) },
@@ -143,6 +126,7 @@ static const mp_rom_map_elem_t mp_module_io_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_BytesIO),     MP_ROM_PTR(&mp_type_bytesio) },
     #endif
 
+    { MP_ROM_QSTR(MP_QSTR_IOBase),      MP_ROM_PTR(&mp_type_io_base) },
     { MP_ROM_QSTR(MP_QSTR_FileIO),      MP_ROM_PTR(&mp_type_io_file) },
     { MP_ROM_QSTR(MP_QSTR_BufferedReader), MP_ROM_PTR(&mp_type_io_buffer) },
     { MP_ROM_QSTR(MP_QSTR_BufferedWriter), MP_ROM_PTR(&mp_type_io_buffer) },

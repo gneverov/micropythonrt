@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: 2024 Gregory Neverov
 // SPDX-License-Identifier: MIT
 
+#define _POSIX_MONOTONIC_CLOCK
 #include <errno.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <sys/time.h>
 
 #include "extmod/modos_newlib.h"
 #include "py/mphal.h"
@@ -63,16 +64,6 @@ static void mp_time_obj_to_tm(mp_obj_t obj, struct tm *tm) {
     tm->tm_isdst = mp_obj_get_int(items[8]);
 }
 
-static void mp_time_obj_to_time(mp_obj_t obj, time_t *t) {
-    if (mp_obj_is_small_int(obj)) {
-        *t = MP_OBJ_SMALL_INT_VALUE(obj);
-    } else if (mp_obj_is_exact_type(obj, &mp_type_int)) {
-        mp_obj_int_to_bytes_impl(obj, false, sizeof(time_t), (byte *)t);
-    } else {
-        mp_raise_TypeError(NULL);
-    }
-}
-
 static mp_obj_t mp_time_asctime(size_t n_args, const mp_obj_t *args) {
     struct tm tm;
     if (n_args == 0) {
@@ -86,12 +77,47 @@ static mp_obj_t mp_time_asctime(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_time_asctime_obj, 0, 1, mp_time_asctime);
 
+static mp_obj_t mp_time_clock_getres(mp_obj_t clk_id) {
+    clockid_t id = mp_obj_get_int(clk_id);
+    struct timespec t;
+    mp_os_check_ret(clock_getres(id, &t));
+    return mp_timespec_to_obj(&t);
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(mp_time_clock_getres_obj, mp_time_clock_getres);
+
+static mp_obj_t mp_time_clock_gettime(mp_obj_t clk_id) {
+    clockid_t id = mp_obj_get_int(clk_id);
+    struct timespec t;
+    mp_os_check_ret(clock_gettime(id, &t));
+    return mp_timespec_to_obj(&t);
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(mp_time_clock_gettime_obj, mp_time_clock_gettime);
+
+static mp_obj_t mp_time_clock_gettime_ns(mp_obj_t clk_id) {
+    clockid_t id = mp_obj_get_int(clk_id);
+    struct timespec t;
+    mp_os_check_ret(clock_gettime(id, &t));
+    // mp_obj_t time = mp_obj_new_int_from_ll(t.tv_sec);
+    // time = mp_obj_int_binary_op(MP_BINARY_OP_MULTIPLY, time, mp_obj_new_int_from_ll(1000000000));
+    // time = mp_obj_int_binary_op(MP_BINARY_OP_ADD, time, mp_obj_new_int(t.tv_nsec));
+    return mp_timespec_to_ns(&t);
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(mp_time_clock_gettime_ns_obj, mp_time_clock_gettime_ns);
+
+static mp_obj_t mp_time_clock_settime(mp_obj_t clk_id, mp_obj_t time_in) {
+    clockid_t id = mp_obj_get_int(clk_id);
+    struct timespec t;
+    mp_obj_to_timespec(time_in, &t);
+    mp_os_check_ret(clock_settime(id, &t));
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_2(mp_time_clock_settime_obj, mp_time_clock_settime);
+
 static mp_obj_t mp_time_clock_settime_ns(mp_obj_t clk_id, mp_obj_t time_in) {
-    time_t time;
-    mp_time_obj_to_time(time_in, &time);
-    lldiv_t div = lldiv(time / 1000, 1000000);
-    struct timeval tv = { div.quot, div.rem };
-    settimeofday(&tv, NULL);
+    clockid_t id = mp_obj_get_int(clk_id);
+    struct timespec t;
+    mp_ns_to_timespec(time_in, &t);
+    mp_os_check_ret(clock_settime(id, &t));
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_2(mp_time_clock_settime_ns_obj, mp_time_clock_settime_ns);
@@ -101,7 +127,7 @@ static mp_obj_t mp_time_ctime(size_t n_args, const mp_obj_t *args) {
     if ((n_args == 0) || (args[0] == mp_const_none)) {
         time(&t);
     } else {
-        mp_time_obj_to_time(args[0], &t);
+        mp_obj_to_time(args[0], &t);
     }
     char *str = ctime(&t);
     return mp_obj_new_str_copy(&mp_type_str, (byte *)str, strlen(str) - 1);
@@ -113,7 +139,7 @@ static mp_obj_t mp_time_gmtime(size_t n_args, const mp_obj_t *args) {
     if ((n_args == 0) || (args[0] == mp_const_none)) {
         time(&t);
     } else {
-        mp_time_obj_to_time(args[0], &t);
+        mp_obj_to_time(args[0], &t);
     }
     struct tm *tm = gmtime(&t);
     if (!tm) {
@@ -128,7 +154,7 @@ static mp_obj_t mp_time_localtime(size_t n_args, const mp_obj_t *args) {
     if ((n_args == 0) || (args[0] == mp_const_none)) {
         time(&t);
     } else {
-        mp_time_obj_to_time(args[0], &t);
+        mp_obj_to_time(args[0], &t);
     }
     struct tm *tm = localtime(&t);
     if (!tm) {
@@ -145,25 +171,23 @@ static mp_obj_t mp_time_mktime(mp_obj_t obj) {
     if (t == -1) {
         mp_raise_type(&mp_type_OverflowError);
     }
-    return mp_obj_new_int_from_ll(t);
+    return mp_time_to_obj(&t);
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(mp_time_mktime_obj, mp_time_mktime);
 
 static mp_obj_t mp_time_monotonic(void) {
-    mp_uint_t ticks = mp_hal_ticks_us();
-    return mp_obj_new_float(ticks * 1e-6);
+    return mp_time_clock_gettime(MP_OBJ_NEW_SMALL_INT(CLOCK_MONOTONIC));
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(mp_time_monotonic_obj, mp_time_monotonic);
 
 static mp_obj_t mp_time_monotonic_ns(void) {
-    mp_uint_t ticks = mp_hal_ticks_us();
-    return mp_obj_new_int(ticks * 1000);
+    return mp_time_clock_gettime_ns(MP_OBJ_NEW_SMALL_INT(CLOCK_MONOTONIC));
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(mp_time_monotonic_ns_obj, mp_time_monotonic_ns);
 
 static mp_obj_t mp_time_sleep(mp_obj_t secs_in) {
-    mp_float_t secs = mp_obj_get_float(secs_in);
-    struct timespec t = { .tv_sec = secs, .tv_nsec = 1e9 * secs};
+    struct timespec t;
+    mp_obj_to_timespec(secs_in, &t);
     int ret;
     MP_OS_CALL(ret, nanosleep, &t, &t);
     return mp_const_none;
@@ -180,8 +204,8 @@ static mp_obj_t mp_time_strftime(size_t n_args, const mp_obj_t *args) {
         mp_time_obj_to_tm(args[1], &tm);
     }
     vstr_t vstr;
-    vstr_init_len(&vstr, 256);
-    size_t len = strftime(vstr.buf, 256, format, &tm);
+    vstr_init(&vstr, 256);
+    size_t len = strftime(vstr.buf, vstr.alloc, format, &tm);
     if (!len) {
         mp_raise_ValueError(NULL);
     }
@@ -196,7 +220,6 @@ static mp_obj_t mp_time_strptime(size_t n_args, const mp_obj_t *args) {
     if (n_args != 1) {
         format = mp_obj_str_get_str(args[1]);
     }
-    extern char *strptime(const char *__restrict, const char *__restrict, struct tm *__restrict);
     struct tm tm;
     if (!strptime(str, format, &tm)) {
         mp_raise_ValueError(NULL);
@@ -206,16 +229,12 @@ static mp_obj_t mp_time_strptime(size_t n_args, const mp_obj_t *args) {
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_time_strptime_obj, 1, 2, mp_time_strptime);
 
 static mp_obj_t mp_time_time(void) {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return mp_obj_new_float(tv.tv_sec + tv.tv_usec * 1e-6f);
+    return mp_time_clock_gettime(MP_OBJ_NEW_SMALL_INT(CLOCK_REALTIME));
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(mp_time_time_obj, mp_time_time);
 
 static mp_obj_t mp_time_time_ns(void) {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return mp_obj_new_int_from_ll((tv.tv_sec * 1000000ll + tv.tv_usec) * 1000ll);
+    return mp_time_clock_gettime_ns(MP_OBJ_NEW_SMALL_INT(CLOCK_REALTIME));
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(mp_time_time_ns_obj, mp_time_time_ns);
 
@@ -250,6 +269,10 @@ static const mp_rom_map_elem_t mp_module_time_globals_table[] = {
 
     { MP_ROM_QSTR(MP_QSTR_asctime),         MP_ROM_PTR(&mp_time_asctime_obj) },
     { MP_ROM_QSTR(MP_QSTR_ctime),           MP_ROM_PTR(&mp_time_ctime_obj) },
+    { MP_ROM_QSTR(MP_QSTR_clock_getres),    MP_ROM_PTR(&mp_time_clock_getres_obj) },
+    { MP_ROM_QSTR(MP_QSTR_clock_gettime),   MP_ROM_PTR(&mp_time_clock_gettime_obj) },
+    { MP_ROM_QSTR(MP_QSTR_clock_gettime_ns), MP_ROM_PTR(&mp_time_clock_gettime_ns_obj) },
+    { MP_ROM_QSTR(MP_QSTR_clock_settime),   MP_ROM_PTR(&mp_time_clock_settime_obj) },
     { MP_ROM_QSTR(MP_QSTR_clock_settime_ns), MP_ROM_PTR(&mp_time_clock_settime_ns_obj) },
     { MP_ROM_QSTR(MP_QSTR_gmtime),          MP_ROM_PTR(&mp_time_gmtime_obj) },
     { MP_ROM_QSTR(MP_QSTR_localtime),       MP_ROM_PTR(&mp_time_localtime_obj) },

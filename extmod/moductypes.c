@@ -25,6 +25,7 @@
  */
 
 #include <assert.h>
+#include <errno.h>
 #include <string.h>
 #include <stdint.h>
 
@@ -647,6 +648,19 @@ static mp_obj_t uctypes_struct_bytes_at(mp_obj_t ptr, mp_obj_t size) {
 }
 MP_DEFINE_CONST_FUN_OBJ_2(uctypes_struct_bytes_at_obj, uctypes_struct_bytes_at);
 
+static mp_obj_t uctypes_get_errno(void) {
+    return MP_OBJ_NEW_SMALL_INT(errno);
+}
+MP_DEFINE_CONST_FUN_OBJ_0(uctypes_get_errno_obj, uctypes_get_errno);
+
+static mp_obj_t uctypes_set_errno(mp_obj_t value_in) {
+    mp_int_t new_value = mp_obj_get_int(value_in);
+    mp_int_t old_value = errno;
+    errno = new_value;
+    return MP_OBJ_NEW_SMALL_INT(old_value);
+}
+MP_DEFINE_CONST_FUN_OBJ_1(uctypes_set_errno_obj, uctypes_set_errno);
+
 static MP_DEFINE_CONST_OBJ_TYPE(
     uctypes_struct_type,
     MP_QSTR_struct,
@@ -666,6 +680,8 @@ static const mp_rom_map_elem_t mp_module_uctypes_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_addressof), MP_ROM_PTR(&uctypes_struct_addressof_obj) },
     { MP_ROM_QSTR(MP_QSTR_bytes_at), MP_ROM_PTR(&uctypes_struct_bytes_at_obj) },
     { MP_ROM_QSTR(MP_QSTR_bytearray_at), MP_ROM_PTR(&uctypes_struct_bytearray_at_obj) },
+    { MP_ROM_QSTR(MP_QSTR_get_errno), MP_ROM_PTR(&uctypes_get_errno_obj) },
+    { MP_ROM_QSTR(MP_QSTR_set_errno), MP_ROM_PTR(&uctypes_set_errno_obj) },
 
     { MP_ROM_QSTR(MP_QSTR_NATIVE), MP_ROM_INT(LAYOUT_NATIVE) },
     { MP_ROM_QSTR(MP_QSTR_LITTLE_ENDIAN), MP_ROM_INT(LAYOUT_LITTLE_ENDIAN) },

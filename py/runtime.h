@@ -202,8 +202,7 @@ mp_obj_t mp_call_method_n_kw_var(bool have_self, size_t n_args_n_kw, const mp_ob
 mp_obj_t mp_call_method_self_n_kw(mp_obj_t meth, mp_obj_t self, size_t n_args, size_t n_kw, const mp_obj_t *args);
 // Call function and catch/dump exception - for Python callbacks from C code
 // (return MP_OBJ_NULL in case of exception).
-mp_obj_t mp_call_function_1_protected(mp_obj_t fun, mp_obj_t arg);
-mp_obj_t mp_call_function_2_protected(mp_obj_t fun, mp_obj_t arg1, mp_obj_t arg2);
+mp_obj_t mp_call_function_n_protected(mp_obj_t fun, size_t n_args, const mp_obj_t *args);
 
 typedef struct _mp_call_args_t {
     mp_obj_t fun;
@@ -269,7 +268,7 @@ NORETURN void mp_raise_type_arg(const mp_obj_type_t *exc_type, mp_obj_t arg);
 NORETURN void mp_raise_StopIteration(mp_obj_t arg);
 NORETURN void mp_raise_TypeError_int_conversion(mp_const_obj_t arg);
 NORETURN void mp_raise_OSError(int errno_);
-NORETURN void mp_raise_OSError_with_filename(int errno_, const char *filename);
+NORETURN void mp_raise_OSError_with_filename(int errno_, mp_obj_t filename);
 NORETURN void mp_raise_recursion_depth(void);
 
 #if MICROPY_BUILTIN_METHOD_CHECK_SELF_ARG

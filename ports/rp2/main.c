@@ -32,7 +32,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <sys/time.h>
 #include <unistd.h>
 #include "morelib/ioctl.h"
 #include "morelib/mount.h"
@@ -44,8 +43,6 @@
 #include "freertos/interrupts.h"
 
 #if MICROPY_PY_LWIP
-#include <netinet/in.h>
-#include "morelib/telnet.h"
 #include "lwip/lwip_init.h"
 #endif
 
@@ -82,6 +79,8 @@ bi_decl(bi_program_version_string(MICROPY_GIT_TAG));
 bi_decl(bi_program_feature_group_with_flags(BINARY_INFO_TAG_MICROPYTHON,
     BINARY_INFO_ID_MP_FROZEN, "frozen modules",
     BI_NAMED_GROUP_SEPARATE_COMMAS | BI_NAMED_GROUP_SORT_ALPHA));
+
+thread_t *mp_thread;
 
 static void mp_main(uint8_t *stack_bottom, uint8_t *stack_top, uint8_t *gc_heap_start, uint8_t *gc_heap_end) {
     #if MICROPY_HW_ENABLE_UART_REPL
@@ -156,8 +155,6 @@ static void mp_main(uint8_t *stack_bottom, uint8_t *stack_top, uint8_t *gc_heap_
     }
 }
 
-thread_t *mp_thread;
-
 #define INIT_STACK_SIZE (4 << 10)
 #define DEFAULT_ROOT_DEV "/dev/storage"
 #define DEFAULT_ROOT_FS "fatfs"
@@ -180,10 +177,10 @@ static void mp_task(void *params) {
     const char *gc_heap_str = getenv("GC_HEAP");
     size_t gc_heap_size = gc_heap_str ? atoi(gc_heap_str) : DEFAULT_GC_HEAP;
     gc_heap_size = MAX(gc_heap_size, MIN_GC_HEAP);
-    uint8_t *gc_heap = malloc(gc_heap_size);
+    uint8_t *gc_heap = memalign(MICROPY_BYTES_PER_GC_BLOCK, gc_heap_size);
     while (!gc_heap) {
         gc_heap_size /= 2;
-        gc_heap = malloc(gc_heap_size);
+        gc_heap = memalign(MICROPY_BYTES_PER_GC_BLOCK, gc_heap_size);
     }
 
     TaskStatus_t task_status;
@@ -221,60 +218,36 @@ static void mp_tuh_task(void *params) {
 static void set_time(void) {
     tzset();
 
-    // should be defined in time.h
-    char *strptime(const char *__restrict, const char *__restrict, struct tm *__restrict);
-
     // Get the build time
     struct tm tm = { 0 };
     strptime(__DATE__, "%b %d %Y", &tm);
-    struct timeval build_tv = { 0 };
-    build_tv.tv_sec = mktime(&tm);
+    struct timespec build = { 0 };
+    build.tv_sec = mktime(&tm);
 
     // Set the current time to be at least the build time
-    struct timeval current_tv = { 0 };
-    gettimeofday(&current_tv, NULL);
-    if (current_tv.tv_sec < build_tv.tv_sec) {
-        settimeofday(&build_tv, NULL);
+    struct timespec current = { 0 };
+    clock_gettime(CLOCK_REALTIME, &current);
+    if (current.tv_sec < build.tv_sec) {
+        clock_settime(CLOCK_REALTIME, &current);
     }
-}
-
-static void telnet_accept(void *arg, int fd) {
-    int mux_fd = (intptr_t)arg;
-    if (ioctl(mux_fd, TMUX_ADD, fd) < 0) {
-        write(fd, "Service Unavailable\r\n", 21);
-    }
-    close(fd);
 }
 
 static void setup_tty(void) {
-    int mux_fd = open("/dev/tmux", O_RDWR, 0);
-    if (mux_fd < 0) {
+    const char *tty = getenv("TTY");
+    int fd = -1;
+    if (tty) {
+        fd = open(tty, O_RDWR, 0);
+    }
+    if (fd < 0) {
+        // If the specified tty failed, try opening the default
+        fd = open(DEFAULT_TTY, O_RDWR, 0);
+    }
+    if (fd < 0) {
         perror("failed up open terminal");
         return;
     }
-
-    int s_fd = open("/dev/ttyS0", O_RDWR | O_NOCTTY, 0);
-    telnet_accept((void *)mux_fd, s_fd);
-
-    int usb_fd = open("/dev/ttyUSB0", O_RDWR | O_NOCTTY, 0);
-    telnet_accept((void *)mux_fd, usb_fd);
-
-    #if MICROPY_PY_LWIP
-    struct sockaddr_in address = {
-        .sin_family = AF_INET,
-        .sin_port = htons(23),
-        .sin_addr = { .s_addr = htonl(INADDR_ANY) },
-    };
-    static struct telnet_server server;
-    int ret = telnet_server_init(&server, (struct sockaddr *)&address, sizeof(address), telnet_accept, (void *)mux_fd);
-    if (ret < 0) {
-        perror("failed to start telnet server");
-        close(mux_fd);
-    }
-    #else
     // Successful open of tty installs it on stdio fds, so we an close our fd.
-    close(mux_fd);
-    #endif
+    close(fd);
 }
 
 static int mount_root_fs(void) {

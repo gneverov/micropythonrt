@@ -332,6 +332,9 @@ mp_obj_t lvgl_type_to_mp_array(lv_type_code_t type_code, size_t array_size, cons
 
 mp_obj_t lvgl_type_to_mp(lv_type_code_t type_code, const void *value) {
     switch (type_code) {
+        case LV_TYPE_NONE: {
+            return mp_const_none;
+        }
         case LV_TYPE_INT8: {
             return mp_obj_new_int(*(int8_t *)value);
         }

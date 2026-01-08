@@ -23,5 +23,6 @@ repos:
     hooks:
       - id: codespell
         name: Spellcheck for changed files (codespell)
+        exclude: '^lib/'
         additional_dependencies:
           - tomli

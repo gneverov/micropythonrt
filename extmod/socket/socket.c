@@ -2,114 +2,45 @@
 // SPDX-License-Identifier: MIT
 
 #include <fcntl.h>
+#include <math.h>
 #include <memory.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
-#include "./socket.h"
 #include "extmod/io/modio.h"
 #include "extmod/modos_newlib.h"
+#include "extmod/socket/socket.h"
 #include "py/builtin.h"
+#include "py/extras.h"
 #include "py/parseargs.h"
 #include "py/runtime.h"
 #include "py/stream.h"
 
 
-socklen_t mp_socket_sockaddr_parse(mp_obj_t address_in, struct sockaddr_storage *address) {
-    size_t len;
-    mp_obj_t *items;
-    mp_obj_tuple_get(address_in, &len, &items);
-    if (len < 2) {
-        goto exit;
-    }
-    const char *host = mp_obj_str_get_str(items[0]);
-    mp_int_t port = mp_obj_get_int(items[1]);
-
-    #if LWIP_IPV4
-    if (len == 2) {
-        struct sockaddr_in *sa = (struct sockaddr_in *)address;
-        sa->sin_family = AF_INET;
-        sa->sin_port = htons(port);
-        if (inet_pton(AF_INET, host, &sa->sin_addr)) {
-            return sizeof(*sa);
-        }
-    }
-    #endif
-
-    #if LWIP_IPV6
-    mp_int_t flowinfo = (len > 2) ? mp_obj_get_int(items[2]) : 0;
-    mp_int_t scope_id = (len > 3) ? mp_obj_get_int(items[3]) : 0;
-
-    if ((len == 2) || (len == 4)){
-        struct sockaddr_in6 *sa = (struct sockaddr_in6 *)address;
-        sa->sin6_family = AF_INET6;
-        sa->sin6_port = htons(port);
-        sa->sin6_flowinfo = flowinfo;
-        sa->sin6_scope_id = scope_id;
-        if (inet_pton(AF_INET6, host, &sa->sin6_addr)) {
-            return sizeof(*sa);
-        }
-    }
-    #endif
-
-exit:
-    mp_raise_TypeError(NULL);
-}
-
-mp_obj_t mp_socket_sockaddr_format(const struct sockaddr *address, socklen_t address_len) {
-    switch (address->sa_family) {
-        #if LWIP_IPV4
-        case AF_INET: {
-            assert(address_len >= sizeof(struct sockaddr_in));
-            const struct sockaddr_in *sa = (const struct sockaddr_in *)address;
-            vstr_t host;
-            vstr_init(&host, INET_ADDRSTRLEN);
-            if (!inet_ntop(AF_INET, &sa->sin_addr, host.buf, INET_ADDRSTRLEN)) {
-                break;
-            }
-            host.len = strlen(host.buf);
-            mp_obj_t items[2] = {
-                mp_obj_new_str_from_vstr(&host),
-                MP_OBJ_NEW_SMALL_INT(ntohs(sa->sin_port)),
-            };
-            return mp_obj_new_tuple(2, items);
-        }
-        #endif
-        #if LWIP_IPV6
-        case AF_INET6: {
-            assert(address_len >= sizeof(struct sockaddr_in6));
-            const struct sockaddr_in6 *sa = (const struct sockaddr_in6 *)address;
-            vstr_t host;
-            vstr_init(&host, INET6_ADDRSTRLEN);
-            if (!inet_ntop(AF_INET6, &sa->sin6_addr, host.buf, INET6_ADDRSTRLEN)) {
-                break;
-            }
-            host.len = strlen(host.buf);
-            mp_obj_t items[4] = {
-                mp_obj_new_str_from_vstr(&host),
-                MP_OBJ_NEW_SMALL_INT(ntohs(sa->sin6_port)),
-                MP_OBJ_NEW_SMALL_INT(sa->sin6_flowinfo),
-                MP_OBJ_NEW_SMALL_INT(sa->sin6_scope_id),
-            };
-            return mp_obj_new_tuple(4, items);
-        }
-        #endif        
-        default: {
-            errno = EAFNOSUPPORT;
-        }
-    }
-    mp_raise_OSError(errno);
-}
-
-static mp_obj_socket_t *mp_socket_get(mp_obj_t self_in) {
+mp_obj_socket_t *mp_socket_get(mp_obj_t self_in) {
     mp_obj_socket_t *self = MP_OBJ_TO_PTR(self_in);
-    if (self->fd == -1) {
-        mp_raise_ValueError(MP_ERROR_TEXT("closed socket"));
-    }
+    // if (self->fd < 0) {
+    //     mp_obj_t args[2] = { 
+    //         MP_OBJ_NEW_SMALL_INT(EBADF), 
+    //         mp_obj_new_str_from_cstr(MP_ERROR_TEXT("closed socket")),
+    //     };
+    //     nlr_raise(mp_obj_exception_make_new(&mp_type_OSError, 2, 0, args));
+    // }
     return self;
 }
+
+static int mp_socket_get_af(mp_obj_socket_t *self) {
+    int af = AF_UNSPEC;
+    socklen_t sock_len = sizeof(af);
+    getsockopt(self->fd, SOL_SOCKET, SO_DOMAIN, &af, &sock_len);
+    return af;
+}
+
+static mp_obj_t mp_socket_settimeout(mp_obj_t self_in, mp_obj_t value_in);
 
 static mp_obj_t mp_socket_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     const qstr kws[] = { MP_QSTR_family, MP_QSTR_type, MP_QSTR_proto, MP_QSTR_fileno, 0 };
@@ -118,15 +49,32 @@ static mp_obj_t mp_socket_make_new(const mp_obj_type_t *type, size_t n_args, siz
     mp_int_t proto = 0;
     mp_obj_t fileno = mp_const_none;
     parse_args_and_kw(n_args, n_kw, args, "|iiiO", kws, &family, &sock_type, &proto, &fileno);
-    int fd = (fileno == mp_const_none) ? -1 : mp_obj_get_int(fileno);
 
-    mp_obj_socket_t *self = mp_obj_malloc(mp_obj_socket_t, &mp_type_socket);
-    self->fd = (fd < 0) ? socket(family, sock_type, proto) : fd;
-    mp_os_check_ret(self->fd);
+    mp_obj_socket_t *self = mp_obj_malloc_with_finaliser(mp_obj_socket_t, &mp_type_socket);
+    self->fd = -1;    
+    if (fileno == mp_const_none) {
+        self->fd = socket(family, sock_type, proto);
+        mp_os_check_ret(self->fd);
+    }
+    else {
+        self->fd = mp_obj_get_int(fileno);
+        if (self->fd < 0) {
+            mp_raise_ValueError(NULL);
+        }
+        struct stat stat;
+        mp_os_check_ret(fstat(self->fd, &stat));
+        if (!S_ISSOCK(stat.st_mode)) {
+            mp_raise_OSError(ENOTSOCK);
+        }
+    }
+    if (!isnan(mp_socket_defaulttimeout)) {
+        mp_socket_settimeout(MP_OBJ_FROM_PTR(self), mp_obj_new_float(mp_socket_defaulttimeout));
+    }
     return MP_OBJ_FROM_PTR(self);
 }
 
-static mp_obj_t mp_socket_getsockopt_attr(mp_obj_socket_t *self, int name) {
+static mp_obj_t mp_socket_getsockopt_attr(mp_obj_t self_in, int name) {
+    mp_obj_socket_t *self = mp_socket_get(self_in);
     int value = 0;
     size_t len = sizeof(value);
     mp_os_check_ret(getsockopt(self->fd, SOL_SOCKET, name, &value, &len));
@@ -134,25 +82,29 @@ static mp_obj_t mp_socket_getsockopt_attr(mp_obj_socket_t *self, int name) {
 }
 
 static void mp_socket_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
-    mp_obj_socket_t *self = mp_socket_get(self_in);
     if (dest[0] == MP_OBJ_SENTINEL) {
         return;
     }
     switch (attr) {
+        case MP_QSTR__closed:
+            dest[0] = mp_obj_new_bool(((mp_obj_socket_t *)MP_OBJ_TO_PTR(self_in))->fd < 0);
+            break;
         case MP_QSTR_family:
-            dest[0] = mp_socket_getsockopt_attr(self, SO_DOMAIN);
+            dest[0] = mp_socket_getsockopt_attr(self_in, SO_DOMAIN);
             break;
         case MP_QSTR_type:
-            dest[0] = mp_socket_getsockopt_attr(self, SO_TYPE);
+            dest[0] = mp_socket_getsockopt_attr(self_in, SO_TYPE);
             break;
         case MP_QSTR_proto:
-            dest[0] = mp_socket_getsockopt_attr(self, SO_PROTOCOL);
+            dest[0] = mp_socket_getsockopt_attr(self_in, SO_PROTOCOL);
             break;
         default:
-            dest[1] = MP_OBJ_SENTINEL;
+            mp_super_attr(self_in, &mp_type_socket, attr, dest);
             break;
     }
 }
+
+static mp_obj_t mp_socket_getpeername(mp_obj_t self_in);
 
 static mp_obj_t mp_socket_accept(mp_obj_t self_in) {
     mp_obj_socket_t *self = mp_socket_get(self_in);
@@ -163,14 +115,17 @@ static mp_obj_t mp_socket_accept(mp_obj_t self_in) {
 
     mp_obj_socket_t *new_self = mp_obj_malloc(mp_obj_socket_t, self->base.type);
     new_self->fd = ret;
-    return MP_OBJ_FROM_PTR(new_self);
+    mp_obj_t items[2];
+    items[0] = MP_OBJ_FROM_PTR(new_self);
+    items[1] = mp_socket_getpeername(items[0]);
+    return mp_obj_new_tuple(2, items);    
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(mp_socket_accept_obj, mp_socket_accept);
 
 static mp_obj_t mp_socket_bind(mp_obj_t self_in, mp_obj_t address_in) {
     mp_obj_socket_t *self = mp_socket_get(self_in);
     struct sockaddr_storage address;
-    socklen_t address_len = mp_socket_sockaddr_parse(address_in, &address);
+    socklen_t address_len = mp_socket_sockaddr_parse(mp_socket_get_af(self), address_in, &address, AI_PASSIVE);
     
     int ret = bind(self->fd, (struct sockaddr *)&address, address_len);
     mp_os_check_ret(ret);
@@ -182,9 +137,10 @@ static MP_DEFINE_CONST_FUN_OBJ_2(mp_socket_bind_obj, mp_socket_bind);
 static mp_obj_t mp_socket_close(mp_obj_t self_in) {
     mp_obj_socket_t *self = MP_OBJ_TO_PTR(self_in);
     if (self->fd >= 0) {
-        close(self->fd);
+        int ret = close(self->fd);
+        self->fd = -1;
+        mp_os_check_ret(ret);
     }
-    self->fd = -1;
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(mp_socket_close_obj, mp_socket_close);
@@ -192,7 +148,7 @@ static MP_DEFINE_CONST_FUN_OBJ_1(mp_socket_close_obj, mp_socket_close);
 static int mp_socket_connect_internal(mp_obj_t self_in, mp_obj_t address_in) {
     mp_obj_socket_t *self = mp_socket_get(self_in);
     struct sockaddr_storage address;
-    socklen_t address_len = mp_socket_sockaddr_parse(address_in, &address);
+    socklen_t address_len = mp_socket_sockaddr_parse(mp_socket_get_af(self), address_in, &address, 0);
 
     int ret;
     MP_OS_CALL(ret, connect, self->fd, (struct sockaddr *)&address, address_len);
@@ -301,6 +257,11 @@ static mp_obj_t mp_socket_gettimeout(mp_obj_t self_in) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(mp_socket_gettimeout_obj, mp_socket_gettimeout);
 
+static mp_obj_t mp_socket_getblocking(mp_obj_t self_in) {
+    return mp_obj_equal_not_equal(MP_BINARY_OP_NOT_EQUAL, mp_socket_gettimeout(self_in), MP_OBJ_NEW_SMALL_INT(0));
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(mp_socket_getblocking_obj, mp_socket_getblocking);
+
 static mp_obj_t mp_socket_listen(size_t n_args, const mp_obj_t *args) {
     mp_obj_socket_t *self = mp_socket_get(args[0]);
     mp_int_t backlog = TCP_DEFAULT_LISTEN_BACKLOG;
@@ -318,18 +279,34 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_socket_listen_obj, 1, 2, mp_socket
 
 static mp_obj_t mp_socket_makefile(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     mp_obj_socket_t *self = mp_socket_get(args[0]);
-    mp_obj_t new_args[7] = {
-        MP_OBJ_NEW_SMALL_INT(self->fd),  // file
+    mp_obj_t open_args[6] = {
+        MP_OBJ_NULL,  // file
         MP_OBJ_NEW_QSTR(MP_QSTR_r),  // mode
         MP_OBJ_NEW_SMALL_INT(-1),  // buffering
         mp_const_none,  // encoding
         mp_const_none,  // errors
         mp_const_none,  // newline
-        mp_const_false,  // closefd
     };
     const qstr kws[] = { MP_QSTR_mode, MP_QSTR_buffering, MP_QSTR_encoding, MP_QSTR_errors, MP_QSTR_newline, 0 };
-    parse_args_and_kw_map(n_args - 1, args + 1, kw_args, "|OO$OOOOO", kws, &new_args[1], &new_args[2], &new_args[3], &new_args[4], &new_args[5]);
-    return mp_builtin_open(7, new_args, (mp_map_t *)&mp_const_empty_map);
+    parse_args_and_kw_map(n_args - 1, args + 1, kw_args, "|OO$OOO", kws, &open_args[1], &open_args[2], &open_args[3], &open_args[4], &open_args[5]);
+    const char *mode = mp_obj_str_get_str(open_args[1]);
+    if (strspn(mode, "rwb") != strlen(mode)) {
+        mp_raise_ValueError(MP_ERROR_TEXT("invalid mode"));
+    }
+
+    int fd = dup(self->fd);
+    mp_os_check_ret(fd);
+    open_args[0] = MP_OBJ_NEW_SMALL_INT(fd);
+    nlr_buf_t nlr;
+    if (nlr_push(&nlr) == 0) {
+        mp_obj_t ret = mp_builtin_open(6, open_args, (mp_map_t *)&mp_const_empty_map);
+        nlr_pop();
+        return ret;
+    }
+    else {
+        close(fd);
+        nlr_raise(nlr.ret_val);
+    }
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(mp_socket_makefile_obj, 1, mp_socket_makefile);
 
@@ -345,7 +322,7 @@ static int mp_socket_read_vstr(int fd, vstr_t *vstr, size_t size, int flags, str
 
 static mp_obj_t mp_socket_recvfrom_internal(size_t n_args, const mp_obj_t *args, struct sockaddr_storage *address, socklen_t *address_len) {
     mp_obj_socket_t *self = mp_socket_get(args[0]);
-    size_t bufsize = mp_obj_get_int(args[1]);
+    mp_int_t bufsize = mp_obj_get_int(args[1]);
     if (bufsize < 0) {
         mp_raise_ValueError(NULL);
     }
@@ -353,6 +330,7 @@ static mp_obj_t mp_socket_recvfrom_internal(size_t n_args, const mp_obj_t *args,
 
     vstr_t buf;
     vstr_init(&buf, bufsize);
+    *address_len = sizeof(*address);
     int ret = mp_socket_read_vstr(self->fd, &buf, bufsize, flags, (struct sockaddr *)address, address_len);
     mp_os_check_ret(ret);
 
@@ -365,8 +343,8 @@ static mp_obj_t mp_socket_recv(size_t n_args, const mp_obj_t *args) {
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_socket_recv_obj, 2, 3, mp_socket_recv);
 
 static mp_obj_t mp_socket_recvfrom(size_t n_args, const mp_obj_t *args) {
-    struct sockaddr_storage address;
-    socklen_t address_len;
+    struct sockaddr_storage address = {0};
+    socklen_t address_len = sizeof(address);
     mp_obj_t result = mp_socket_recvfrom_internal(n_args, args, &address, &address_len);
 
     if (result != mp_const_none) {
@@ -384,8 +362,8 @@ static mp_obj_t mp_socket_recvfrom_into_internal(size_t n_args, const mp_obj_t *
     mp_obj_socket_t *self = mp_socket_get(args[0]);
     mp_buffer_info_t bufinfo;
     mp_get_buffer_raise(args[1], &bufinfo, MP_BUFFER_WRITE);
-    size_t nbytes = (n_args > 2) ? mp_obj_get_int(args[2]) : bufinfo.len;
-    if (nbytes < 0) {
+    mp_int_t nbytes = (n_args > 2) ? mp_obj_get_int(args[2]) : bufinfo.len;
+    if (nbytes < 0 || nbytes > bufinfo.len) {
         mp_raise_ValueError(NULL);
     }
     int flags = (n_args > 3) ? mp_obj_get_int(args[3]) : 0;
@@ -403,8 +381,8 @@ static mp_obj_t mp_socket_recv_into(size_t n_args, const mp_obj_t *args) {
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_socket_recv_into_obj, 2, 4, mp_socket_recv_into);
 
 static mp_obj_t mp_socket_recvfrom_into(size_t n_args, const mp_obj_t *args) {
-    struct sockaddr_storage address;
-    socklen_t address_len;
+    struct sockaddr_storage address = {0};
+    socklen_t address_len = sizeof(address);
     mp_obj_t result = mp_socket_recvfrom_into_internal(n_args, args, &address, &address_len);
 
     if (result != mp_const_none) {
@@ -426,6 +404,9 @@ static int mp_socket_write_str(int fd, const char *str, size_t len, int flags, c
 
 static mp_obj_t mp_socket_sendto_internal(size_t n_args, const mp_obj_t *args, mp_obj_t address_in) {
     mp_obj_socket_t *self = mp_socket_get(args[0]);
+    if (mp_obj_is_str(args[1])) {
+        mp_raise_TypeError(MP_ERROR_TEXT("a bytes-like object is required, not 'str'"));
+    }
     mp_buffer_info_t bufinfo;
     mp_get_buffer_raise(args[1], &bufinfo, MP_BUFFER_READ);
     int flags = (n_args > 2) ? mp_obj_get_int(args[2]) : 0;
@@ -435,7 +416,7 @@ static mp_obj_t mp_socket_sendto_internal(size_t n_args, const mp_obj_t *args, m
     socklen_t address_len = 0;
     if (address_in != MP_OBJ_NULL) {    
         address = (struct sockaddr *)&address_storage; 
-        address_len = mp_socket_sockaddr_parse(address_in, &address_storage);
+        address_len = mp_socket_sockaddr_parse(mp_socket_get_af(self), address_in, &address_storage, 0);
     }
     int ret = mp_socket_write_str(self->fd, bufinfo.buf, bufinfo.len, flags, address, address_len);
     return mp_os_check_ret(ret);
@@ -496,11 +477,15 @@ static mp_obj_t mp_socket_settimeout(mp_obj_t self_in, mp_obj_t value_in) {
     if (value_in != mp_const_none) {
         mp_float_t value = mp_obj_get_float(value_in);
         if (value > 0.0) {
-            tv.tv_sec = value;
-            tv.tv_usec = value * 1e6;
+            mp_float_t sec;
+            tv.tv_usec = MICROPY_FLOAT_C_FUN(modf)(value, &sec) * MICROPY_FLOAT_CONST(1e6);
+            tv.tv_sec = sec;
         }
         else if (value == 0.0) {
             flags |= O_NONBLOCK;
+        }
+        else {
+            mp_raise_ValueError(NULL);
         }
     }
 
@@ -551,9 +536,40 @@ static mp_uint_t mp_socket_stream_write(mp_obj_t self_in, const void *buf, mp_ui
     return ret;
 }
 
+__attribute__((visibility("hidden")))
+void mp_socket_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
+    mp_obj_socket_t *self = mp_socket_get(self_in);
+    mp_print_str(print, "<");
+    mp_print_str(print, mp_obj_get_type_str(self_in));
+    if (self->fd < 0) {
+        mp_print_str(print, " [closed]>");
+        return;
+    }
+    mp_print_str(print, " fd=");
+    mp_obj_print_helper(print, mp_socket_fileno(self_in), kind);
+    mp_print_str(print, " family=");
+    mp_obj_print_helper(print, mp_socket_getsockopt_attr(self_in, SO_DOMAIN), kind);
+    mp_print_str(print, " type=");
+    mp_obj_print_helper(print, mp_socket_getsockopt_attr(self_in, SO_TYPE), kind);
+    mp_print_str(print, " proto=");
+    mp_obj_print_helper(print, mp_socket_getsockopt_attr(self_in, SO_PROTOCOL), kind);
+    mp_print_str(print, " laddr=");
+    mp_obj_print_helper(print, mp_socket_getsockname(self_in), kind);
+    nlr_buf_t buf;
+    if (nlr_push(&buf) == 0) {
+        mp_obj_t raddr = mp_socket_getpeername(self_in);
+        nlr_pop();
+        mp_print_str(print, " raddr=");
+        mp_obj_print_helper(print, raddr, kind);        
+    }
+    mp_print_str(print, ">");
+}
+
 static const mp_rom_map_elem_t mp_socket_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR___del__),         MP_ROM_PTR(&mp_socket_close_obj) },
-
+    { MP_ROM_QSTR(MP_QSTR___enter__),       MP_ROM_PTR(&mp_enter_self_obj) },
+    { MP_ROM_QSTR(MP_QSTR___exit__),        MP_ROM_PTR(&mp_exit_close_obj) },
+    
     { MP_ROM_QSTR(MP_QSTR_accept),          MP_ROM_PTR(&mp_socket_accept_obj) },
     { MP_ROM_QSTR(MP_QSTR_bind),            MP_ROM_PTR(&mp_socket_bind_obj) },
     { MP_ROM_QSTR(MP_QSTR_close),           MP_ROM_PTR(&mp_socket_close_obj) },    
@@ -562,6 +578,7 @@ static const mp_rom_map_elem_t mp_socket_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_detach),          MP_ROM_PTR(&mp_socket_detach_obj) },
     { MP_ROM_QSTR(MP_QSTR_dup),             MP_ROM_PTR(&mp_socket_dup_obj) },
     { MP_ROM_QSTR(MP_QSTR_fileno),          MP_ROM_PTR(&mp_socket_fileno_obj) },
+    { MP_ROM_QSTR(MP_QSTR_getblocking),     MP_ROM_PTR(&mp_socket_getblocking_obj) },
     { MP_ROM_QSTR(MP_QSTR_getpeername),     MP_ROM_PTR(&mp_socket_getpeername_obj) },
     { MP_ROM_QSTR(MP_QSTR_getsockname),     MP_ROM_PTR(&mp_socket_getsockname_obj) },
     { MP_ROM_QSTR(MP_QSTR_getsockopt),      MP_ROM_PTR(&mp_socket_getsockopt_obj) },
@@ -582,7 +599,8 @@ static const mp_rom_map_elem_t mp_socket_locals_dict_table[] = {
 };
 static MP_DEFINE_CONST_DICT(mp_socket_locals_dict, mp_socket_locals_dict_table);
 
-static const mp_stream_p_t mp_socket_stream_p = {
+__attribute__((visibility("hidden")))
+const mp_stream_p_t mp_socket_stream_p = {
     .read = mp_socket_stream_read,
     .write = mp_socket_stream_write,
     .ioctl = mp_io_stream_ioctl,
@@ -590,11 +608,11 @@ static const mp_stream_p_t mp_socket_stream_p = {
 
 MP_DEFINE_CONST_OBJ_TYPE(
     mp_type_socket,
-    MP_QSTR_Socket,
+    MP_QSTR_socket,
     MP_TYPE_FLAG_NONE,
     make_new, mp_socket_make_new,
     attr, mp_socket_attr,
-    // print, mp_socket_print,
+    print, mp_socket_print,
     protocol, &mp_socket_stream_p,
     locals_dict, &mp_socket_locals_dict
     );

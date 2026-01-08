@@ -98,6 +98,7 @@ void mp_map_init(mp_map_t *map, size_t n) {
     map->all_keys_are_qstrs = 1;
     map->is_fixed = 0;
     map->is_ordered = 0;
+    map->is_sorted = 0;
 }
 
 void mp_map_init_fixed_table(mp_map_t *map, size_t n, const mp_obj_t *table) {
@@ -106,6 +107,7 @@ void mp_map_init_fixed_table(mp_map_t *map, size_t n, const mp_obj_t *table) {
     map->all_keys_are_qstrs = 1;
     map->is_fixed = 1;
     map->is_ordered = 1;
+    map->is_sorted = 0;
     map->table = (mp_map_elem_t *)table;
 }
 
@@ -145,6 +147,12 @@ static void mp_map_rehash(mp_map_t *map) {
         }
     }
     // m_del(mp_map_elem_t, old_table, old_alloc);
+}
+
+int mp_map_lookup_cmp(const void *left, const void *right) {
+    const mp_map_elem_t *index = left;
+    const mp_map_elem_t *elem = right;
+    return mp_obj_str_get_qstr(index->key) - mp_obj_str_get_qstr(elem->key);
 }
 
 // MP_MAP_LOOKUP behaviour:
@@ -189,7 +197,14 @@ mp_map_elem_t *MICROPY_WRAP_MP_MAP_LOOKUP(mp_map_lookup)(mp_map_t * map, mp_obj_
     }
 
     // if the map is an ordered array then we must do a brute force linear search
-    if (map->is_ordered) {
+    if (map->is_sorted && compare_only_ptrs) {
+        mp_map_elem_t key = { index, MP_OBJ_NULL };
+        mp_map_elem_t *elem = bsearch(&key, map->table, map->used, sizeof(mp_map_elem_t), mp_map_lookup_cmp);
+        if (elem) {
+            MAP_CACHE_SET(index, elem - map->table);
+        }
+        return elem;
+    } else if (map->is_ordered) {
         for (mp_map_elem_t *elem = &map->table[0], *top = &map->table[map->used]; elem < top; elem++) {
             if (elem->key == index || (!compare_only_ptrs && mp_obj_equal(elem->key, index))) {
                 #if MICROPY_PY_COLLECTIONS_ORDEREDDICT

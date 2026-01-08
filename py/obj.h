@@ -465,9 +465,10 @@ typedef struct _mp_rom_map_elem_t {
 typedef struct _mp_map_t {
     size_t all_keys_are_qstrs : 1;
     size_t is_fixed : 1;    // if set, table is fixed/read-only and can't be modified
+    size_t used : (8 * sizeof(size_t) - 2);
     size_t is_ordered : 1;  // if set, table is an ordered array, not a hash map
-    size_t used : (8 * sizeof(size_t) - 3);
-    size_t alloc;
+    size_t is_sorted : 1;  // if set, table is a sorted array, which implies is_ordered and all_keys_are_qstrs
+    size_t alloc : (8 * sizeof(size_t) - 2);
     mp_map_elem_t *table;
 } mp_map_t;
 
@@ -555,6 +556,8 @@ typedef mp_obj_t (*mp_fun_kw_t)(size_t n, const mp_obj_t *, mp_map_t *);
 #define MP_TYPE_FLAG_ITER_IS_CUSTOM (0x0100)
 #define MP_TYPE_FLAG_ITER_IS_STREAM (MP_TYPE_FLAG_ITER_IS_ITERNEXT | MP_TYPE_FLAG_ITER_IS_CUSTOM)
 #define MP_TYPE_FLAG_INSTANCE_TYPE (0x0200)
+#define MP_TYPE_FLAG_TRUE_SELF (0x0400)
+#define MP_TYPE_FLAG_IS_NAMEDTUPLE (0x0800)
 
 typedef enum {
     PRINT_STR = 0,
@@ -874,6 +877,19 @@ extern const mp_obj_type_t mp_type_MemoryError;
 extern const mp_obj_type_t mp_type_NameError;
 extern const mp_obj_type_t mp_type_NotImplementedError;
 extern const mp_obj_type_t mp_type_OSError;
+extern const mp_obj_type_t mp_type_BlockingIOError;
+extern const mp_obj_type_t mp_type_ConnectionError;
+extern const mp_obj_type_t mp_type_BrokenPipeError;
+extern const mp_obj_type_t mp_type_ConnectionAbortedError;
+extern const mp_obj_type_t mp_type_ConnectionRefusedError;
+extern const mp_obj_type_t mp_type_ConnectionResetError;
+extern const mp_obj_type_t mp_type_InterruptedError;
+extern const mp_obj_type_t mp_type_IsADirectoryError;
+extern const mp_obj_type_t mp_type_NotADirectoryError;
+extern const mp_obj_type_t mp_type_PermissionError;
+extern const mp_obj_type_t mp_type_TimeoutError;
+extern const mp_obj_type_t mp_type_FileExistsError;
+extern const mp_obj_type_t mp_type_FileNotFoundError;
 extern const mp_obj_type_t mp_type_OverflowError;
 extern const mp_obj_type_t mp_type_RuntimeError;
 extern const mp_obj_type_t mp_type_StopAsyncIteration;
@@ -1038,6 +1054,7 @@ static inline bool mp_obj_is_integer(mp_const_obj_t o) {
 }
 
 mp_int_t mp_obj_get_int(mp_const_obj_t arg);
+mp_uint_t mp_obj_get_uint(mp_const_obj_t arg);
 mp_int_t mp_obj_get_int_truncated(mp_const_obj_t arg);
 bool mp_obj_get_int_maybe(mp_const_obj_t arg, mp_int_t *value);
 #if MICROPY_PY_BUILTINS_FLOAT
@@ -1234,10 +1251,9 @@ MP_DECLARE_CONST_FUN_OBJ_1(mp_identity_obj);
 typedef struct _mp_obj_module_t {
     mp_obj_base_t base;
     mp_obj_dict_t *globals;
+    int freeze_index;
 } mp_obj_module_t;
-static inline mp_obj_dict_t *mp_obj_module_get_globals(mp_obj_t module) {
-    return ((mp_obj_module_t *)MP_OBJ_TO_PTR(module))->globals;
-}
+mp_obj_dict_t *mp_obj_module_get_globals(mp_obj_t module);
 
 // staticmethod and classmethod types; defined here so we can make const versions
 // this structure is used for instances of both staticmethod and classmethod

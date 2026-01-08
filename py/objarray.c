@@ -254,6 +254,9 @@ static void memoryview_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
     if (attr == MP_QSTR_itemsize) {
         mp_obj_array_t *self = MP_OBJ_TO_PTR(self_in);
         dest[0] = MP_OBJ_NEW_SMALL_INT(mp_binary_get_size('@', self->typecode & TYPECODE_MASK, NULL));
+    } else if (attr == MP_QSTR_nbytes) {
+        mp_obj_array_t *self = MP_OBJ_TO_PTR(self_in);
+        dest[0] = MP_OBJ_NEW_SMALL_INT(self->len * mp_binary_get_size('@', self->typecode & TYPECODE_MASK, NULL));
     }
     #if MICROPY_PY_BUILTINS_BYTES_HEX
     else {
@@ -406,6 +409,18 @@ static mp_obj_t array_append(mp_obj_t self_in, mp_obj_t arg) {
 }
 MP_DEFINE_CONST_FUN_OBJ_2(mp_obj_array_append_obj, array_append);
 
+static mp_obj_t array_clear(mp_obj_t self_in) {
+    // self is not a memoryview, so we don't need to use (& TYPECODE_MASK)
+    assert((MICROPY_PY_BUILTINS_BYTEARRAY && mp_obj_is_type(self_in, &mp_type_bytearray))
+        || (MICROPY_PY_ARRAY && mp_obj_is_type(self_in, &mp_type_array)));
+    mp_obj_array_t *self = MP_OBJ_TO_PTR(self_in);
+
+    self->free += self->len;
+    self->len = 0;
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(mp_obj_array_clear_obj, array_clear);
+
 static mp_obj_t array_extend(mp_obj_t self_in, mp_obj_t arg_in) {
     // self is not a memoryview, so we don't need to use (& TYPECODE_MASK)
     assert((MICROPY_PY_BUILTINS_BYTEARRAY && mp_obj_is_type(self_in, &mp_type_bytearray))
@@ -461,30 +476,32 @@ static mp_obj_t array_subscr(mp_obj_t self_in, mp_obj_t index_in, mp_obj_t value
             uint8_t *src_items = NULL;
             size_t src_offs = 0;
             size_t item_sz = mp_binary_get_size('@', o->typecode & TYPECODE_MASK, NULL);
-            if (mp_obj_is_obj(value) && MP_OBJ_TYPE_GET_SLOT_OR_NULL(((mp_obj_base_t *)MP_OBJ_TO_PTR(value))->type, subscr) == array_subscr) {
-                // value is array, bytearray or memoryview
-                mp_obj_array_t *src_slice = MP_OBJ_TO_PTR(value);
-                if (item_sz != mp_binary_get_size('@', src_slice->typecode & TYPECODE_MASK, NULL)) {
-                compat_error:
-                    mp_raise_ValueError(MP_ERROR_TEXT("lhs and rhs should be compatible"));
+            if (value != MP_OBJ_NULL) {
+                if (mp_obj_is_obj(value) && MP_OBJ_TYPE_GET_SLOT_OR_NULL(((mp_obj_base_t *)MP_OBJ_TO_PTR(value))->type, subscr) == array_subscr) {
+                    // value is array, bytearray or memoryview
+                    mp_obj_array_t *src_slice = MP_OBJ_TO_PTR(value);
+                    if (item_sz != mp_binary_get_size('@', src_slice->typecode & TYPECODE_MASK, NULL)) {
+                    compat_error:
+                        mp_raise_ValueError(MP_ERROR_TEXT("lhs and rhs should be compatible"));
+                    }
+                    src_len = src_slice->len;
+                    src_items = src_slice->items;
+                    #if MICROPY_PY_BUILTINS_MEMORYVIEW
+                    if (mp_obj_is_type(value, &mp_type_memoryview)) {
+                        src_offs = src_slice->memview_offset * item_sz;
+                    }
+                    #endif
+                } else if (mp_obj_is_type(value, &mp_type_bytes)) {
+                    if (item_sz != 1) {
+                        goto compat_error;
+                    }
+                    mp_buffer_info_t bufinfo;
+                    mp_get_buffer_raise(value, &bufinfo, MP_BUFFER_READ);
+                    src_len = bufinfo.len;
+                    src_items = bufinfo.buf;
+                } else {
+                    mp_raise_NotImplementedError(MP_ERROR_TEXT("array/bytes required on right side"));
                 }
-                src_len = src_slice->len;
-                src_items = src_slice->items;
-                #if MICROPY_PY_BUILTINS_MEMORYVIEW
-                if (mp_obj_is_type(value, &mp_type_memoryview)) {
-                    src_offs = src_slice->memview_offset * item_sz;
-                }
-                #endif
-            } else if (mp_obj_is_type(value, &mp_type_bytes)) {
-                if (item_sz != 1) {
-                    goto compat_error;
-                }
-                mp_buffer_info_t bufinfo;
-                mp_get_buffer_raise(value, &bufinfo, MP_BUFFER_READ);
-                src_len = bufinfo.len;
-                src_items = bufinfo.buf;
-            } else if (value != MP_OBJ_NULL) {
-                mp_raise_NotImplementedError(MP_ERROR_TEXT("array/bytes required on right side"));
             }
 
             // TODO: check src/dst compat

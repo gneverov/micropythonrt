@@ -224,6 +224,16 @@ static mp_obj_t mp_sys_settrace(mp_obj_t obj) {
 MP_DEFINE_CONST_FUN_OBJ_1(mp_sys_settrace_obj, mp_sys_settrace);
 #endif // MICROPY_PY_SYS_SETTRACE
 
+static mp_obj_t mp_sys_getfilesystemencoding(void) {
+    return MP_OBJ_NEW_QSTR(MP_QSTR_utf_8);
+}
+MP_DEFINE_CONST_FUN_OBJ_0(mp_sys_getfilesystemencoding_obj, mp_sys_getfilesystemencoding);
+
+static mp_obj_t mp_sys_getfilesystemencodeerrors(void) {
+    return MP_OBJ_NEW_QSTR(MP_QSTR_strict);
+}
+MP_DEFINE_CONST_FUN_OBJ_0(mp_sys_getfilesystemencodeerrors_obj, mp_sys_getfilesystemencodeerrors);
+
 #if MICROPY_PY_SYS_PATH && !MICROPY_PY_SYS_ATTR_DELEGATION
 #error "MICROPY_PY_SYS_PATH requires MICROPY_PY_SYS_ATTR_DELEGATION"
 #endif
@@ -234,10 +244,6 @@ MP_DEFINE_CONST_FUN_OBJ_1(mp_sys_settrace_obj, mp_sys_settrace);
 
 #if MICROPY_PY_SYS_TRACEBACKLIMIT && !MICROPY_PY_SYS_ATTR_DELEGATION
 #error "MICROPY_PY_SYS_TRACEBACKLIMIT requires MICROPY_PY_SYS_ATTR_DELEGATION"
-#endif
-
-#if MICROPY_PY_SYS_ATTR_DELEGATION && !MICROPY_MODULE_ATTR_DELEGATION
-#error "MICROPY_PY_SYS_ATTR_DELEGATION requires MICROPY_MODULE_ATTR_DELEGATION"
 #endif
 
 #if MICROPY_PY_SYS_ATTR_DELEGATION
@@ -257,16 +263,45 @@ static const uint16_t sys_mutable_keys[] = {
     #endif
     MP_QSTRnull,
 };
-
-void mp_module_sys_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
-    MP_STATIC_ASSERT(MP_ARRAY_SIZE(sys_mutable_keys) == MP_SYS_MUTABLE_NUM + 1);
-    MP_STATIC_ASSERT(MP_ARRAY_SIZE(MP_STATE_VM(sys_mutable)) == MP_SYS_MUTABLE_NUM);
-    mp_module_generic_attr(attr, dest, sys_mutable_keys, MP_STATE_VM(sys_mutable));
-}
 #endif
+
+static mp_obj_t mp_sys_getattr(mp_obj_t attr) {
+    switch (MP_OBJ_QSTR_VALUE(attr)) {
+        case MP_QSTR_builtin_module_names: {
+            size_t len = mp_builtin_module_map.used + mp_builtin_extensible_module_map.used;
+            mp_obj_t result = mp_obj_new_tuple(len, NULL);
+            mp_obj_t *items;
+            mp_obj_tuple_get(result, &len, &items);
+            const mp_map_t *maps[] = { &mp_builtin_module_map, &mp_builtin_extensible_module_map };
+            int j = 0;
+            for (int k = 0; k < MP_ARRAY_SIZE(maps); k++) {
+                for (int i = 0; i < maps[k]->alloc; i++) {
+                    if (maps[k]->table[i].key != MP_OBJ_NULL) {
+                        assert(j < len);
+                        items[j++] = maps[k]->table[i].key;
+                    }
+                }
+            }
+            return result;
+        }
+        default: {
+            #if MICROPY_PY_SYS_ATTR_DELEGATION
+            MP_STATIC_ASSERT(MP_ARRAY_SIZE(sys_mutable_keys) == MP_SYS_MUTABLE_NUM + 1);
+            MP_STATIC_ASSERT(MP_ARRAY_SIZE(MP_STATE_VM(sys_mutable)) == MP_SYS_MUTABLE_NUM);
+            mp_obj_t dest[2] = {0};
+            mp_module_generic_attr(MP_OBJ_QSTR_VALUE(attr), dest, sys_mutable_keys, MP_STATE_VM(sys_mutable));
+            return dest[0];
+            #else
+            return MP_OBJ_NULL;
+            #endif
+        }
+    }
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(mp_sys_getattr_obj, mp_sys_getattr);
 
 static const mp_rom_map_elem_t mp_module_sys_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_sys) },
+    { MP_ROM_QSTR(MP_QSTR___getattr__), MP_ROM_PTR(&mp_sys_getattr_obj) },
 
     #if MICROPY_PY_SYS_ARGV
     { MP_ROM_QSTR(MP_QSTR_argv), MP_ROM_PTR(&MP_STATE_VM(mp_sys_argv_obj)) },
@@ -328,6 +363,9 @@ static const mp_rom_map_elem_t mp_module_sys_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_executable), MP_ROM_PTR(&mp_sys_executable_obj) },
     #endif
 
+    { MP_ROM_QSTR(MP_QSTR_getfilesystemencoding), MP_ROM_PTR(&mp_sys_getfilesystemencoding_obj) },
+    { MP_ROM_QSTR(MP_QSTR_getfilesystemencodeerrors), MP_ROM_PTR(&mp_sys_getfilesystemencodeerrors_obj) },
+
     /*
      * Extensions to CPython
      */
@@ -369,7 +407,6 @@ MP_REGISTER_ROOT_POINTER(mp_obj_t sys_exitfunc);
 #if MICROPY_PY_SYS_ATTR_DELEGATION
 // Contains mutable sys attributes.
 MP_REGISTER_ROOT_POINTER(mp_obj_t sys_mutable[MP_SYS_MUTABLE_NUM]);
-MP_REGISTER_MODULE_DELEGATION(mp_module_sys, mp_module_sys_attr);
 #endif
 
 #endif // MICROPY_PY_SYS

@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 #include <stdarg.h>
+#include <string.h>
 
+#include "py/extras.h"
 #include "py/parseargs.h"
 #include "py/runtime.h"
 
@@ -12,9 +14,8 @@ static const char *parse_arg(const mp_obj_t arg, const char *format, qstr name, 
         case '(': {
             format++;
             if (arg != MP_OBJ_NULL) {
-                size_t len;
                 mp_obj_t *items;
-                mp_obj_tuple_get(arg, &len, &items);
+                size_t len = mp_obj_tuple_get_checked(arg, &items);
                 for (size_t i = 0; i < len; i++) {
                     format = parse_arg(items[i], format, MP_QSTR_, vals);
                 }
@@ -33,31 +34,62 @@ static const char *parse_arg(const mp_obj_t arg, const char *format, qstr name, 
             break;
         }
         case 's':
+        case 'w':
+        case 'y':
         case 'z': {
-            bool optional = *format == 'z';
+            char code = *format;
             format++;
+            if ((code == 'y') && (arg != MP_OBJ_NULL) && mp_obj_is_str(arg)) {
+                mp_raise_TypeError(MP_ERROR_TEXT("expected bytes-like object, not str"));
+            }
             if (*format == '*') {
                 format++;
                 mp_buffer_info_t *val = va_arg(*vals, mp_buffer_info_t *);
 
                 if (arg != MP_OBJ_NULL) {
                     mp_buffer_info_t bufinfo;
-                    mp_get_buffer_raise(arg, &bufinfo, MP_BUFFER_READ);
+                    mp_get_buffer_raise(arg, &bufinfo, (code == 'w') ? MP_BUFFER_RW : MP_BUFFER_READ);
                     if (val) {
                         *val = bufinfo;
                     }
                 }
             } else {
+                assert(code != 'w');
                 const char **val = va_arg(*vals, const char **);
+                size_t *len = NULL;
+                if (*format == '#') {
+                    format++;
+                    len = va_arg(*vals, size_t *);
+                }
 
                 if (arg != MP_OBJ_NULL) {
                     const char *s = NULL;
-                    if (!optional || (arg != mp_const_none)) {
-                        s = mp_obj_str_get_str(arg);
+                    size_t n = 0;
+                    if ((code != 'z') || (arg != mp_const_none)) {
+                        s = mp_obj_str_get_data(arg, &n);
                     }
                     if (val) {
                         *val = s;
                     }
+                    if (len) {
+                        *len = n;
+                    } else if (s && strlen(s) != n) {
+                        mp_raise_ValueError(MP_ERROR_TEXT("embedded null byte"));
+                    }
+                }
+            }
+            break;
+        }
+        case 'q': {
+            format++;
+            qstr *val = va_arg(*vals, qstr *);
+
+            if (arg != MP_OBJ_NULL) {
+                if (!mp_obj_is_qstr(arg)) {
+                    mp_raise_TypeError(MP_ERROR_TEXT("expected qstr"));
+                }
+                if (val) {
+                    *val = MP_OBJ_QSTR_VALUE(arg);
                 }
             }
             break;
@@ -82,6 +114,18 @@ static const char *parse_arg(const mp_obj_t arg, const char *format, qstr name, 
                 mp_int_t i = mp_obj_is_true(arg);
                 if (val) {
                     *val = i;
+                }
+            }
+            break;
+        }
+        case 'f': {
+            format++;
+            mp_float_t *val = va_arg(*vals, mp_float_t *);
+
+            if (arg != MP_OBJ_NULL) {
+                mp_float_t f = mp_obj_get_float(arg);
+                if (val) {
+                    *val = f;
                 }
             }
             break;

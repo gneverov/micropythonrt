@@ -117,7 +117,7 @@
 #define MICROPY_STACK_CHECK_MARGIN              (256)
 #define MICROPY_ENABLE_EMERGENCY_EXCEPTION_BUF  (1)
 #define MICROPY_LONGINT_IMPL                    (MICROPY_LONGINT_IMPL_MPZ)
-#define MICROPY_FLOAT_IMPL                      (MICROPY_FLOAT_IMPL_FLOAT)
+#define MICROPY_FLOAT_IMPL                      (MICROPY_FLOAT_IMPL_DOUBLE)
 #define MICROPY_ENABLE_SCHEDULER                (1)
 #define MICROPY_USE_INTERNAL_ERRNO              (0)
 #define MICROPY_USE_INTERNAL_PRINTF             (0)
@@ -125,10 +125,12 @@
 // Fine control over Python builtins, classes, modules, etc
 #define MICROPY_BANNER_MACHINE                  ""
 #define MICROPY_PY_BUILTINS_HELP_TEXT           rp2_help_text
+#define MICROPY_PY_BUILTINS_MEMORYVIEW_ITEMSIZE (1)
 #define MICROPY_PY_SYS_PLATFORM                 "rp2"
 #ifndef MICROPY_PY_THREAD
 #define MICROPY_PY_THREAD                       (1)
 #define MICROPY_PY_THREAD_GIL                   (1)
+#define MICROPY_PY_WEAKREF                      (0)
 #endif
 
 // Extended modules
@@ -185,6 +187,8 @@
 #define MICROPY_PY_FREEZE                       (1)
 #define MICROPY_PY_MATH_SPECIAL_FUNCTIONS       (0)
 #define MICROPY_PY_FRAMEBUF                     (0)
+#define MICROPY_PY_THREADING                    (MICROPY_PY_THREAD)
+#define MICROPY_PY_SYS_EXC_INFO                 (1)
 
 // Hardware timer alarm index. Available range 0-3.
 // Number 3 is currently used by pico-sdk (PICO_TIME_DEFAULT_ALARM_POOL_HARDWARE_ALARM_NUM)
@@ -320,3 +324,9 @@ extern void mp_task_interrupt(void);
 #ifndef MICROPY_BOARD_END_SOFT_RESET
 #define MICROPY_BOARD_END_SOFT_RESET()
 #endif
+
+extern void mp_thread_main_init(void);
+#define MICROPY_PORT_INIT_FUNC \
+    mp_thread_main_init(); \
+    MP_STATE_MAIN_THREAD(thread_locals) = MP_OBJ_NULL; \
+    MP_STATE_VM(environ_dict) = MP_OBJ_NULL;

@@ -28,7 +28,7 @@ mp_obj_io_buffer_t *mp_io_buffer_get(mp_obj_t self_in, int flags) {
     return self;
 }
 
-static mp_obj_t mp_io_buffer_alloc(const mp_obj_type_t *type, FILE *file, size_t buffer_size, int flags) {
+static void mp_io_buffer_init(mp_obj_io_buffer_t *self, FILE *file, size_t buffer_size, int flags) {
     switch (buffer_size) {
         case 0:
             setvbuf(file, NULL, _IONBF, 0);
@@ -41,11 +41,9 @@ static mp_obj_t mp_io_buffer_alloc(const mp_obj_type_t *type, FILE *file, size_t
             break;
     }
 
-    mp_obj_io_buffer_t *self = mp_obj_malloc_with_finaliser(mp_obj_io_buffer_t, type);
     self->file = file;
     self->flags = flags;
     self->flags |= (lseek(fileno(file), 0, SEEK_CUR) >= 0) ? FSEEK : 0;
-    return MP_OBJ_FROM_PTR(self);
 }
 
 __attribute__((visibility("hidden")))
@@ -61,8 +59,12 @@ mp_obj_t mp_io_buffer_new(const mp_obj_type_t *type, mp_obj_t name, mp_obj_t mod
                 break;
             case 'w':
                 mode[0] = 'w';
-                flags = FWRITE;
+                flags = FWRITE | FTRUNC;
                 break;
+            case 'x':
+                mode[0] = 'w';
+                flags = FWRITE | FEXCL;
+                break;                
             case 'a':
                 mode[0] = 'a';
                 flags = FWRITE | FAPPEND;
@@ -79,10 +81,20 @@ mp_obj_t mp_io_buffer_new(const mp_obj_type_t *type, mp_obj_t name, mp_obj_t mod
         if (!closefd) {
             mp_raise_ValueError(NULL);
         }
+        if (flags & FEXCL) {
+            int fd = open(mp_obj_str_get_str(name), O_CREAT | O_EXCL);
+            mp_os_check_ret(fd);
+            close(fd);
+        }
         file = fopen(mp_obj_str_get_str(name), mode);
     }
     else {
         int fd = mp_obj_get_int(name);
+        int actual_flags = fcntl(fd, F_GETFL);
+        mp_os_check_ret(actual_flags);
+        if (((actual_flags + 1) & O_ACCMODE & flags) != (flags & O_ACCMODE)) {
+            mp_raise_OSError(EBADF);
+        }
         file = fdopen(fd, mode);
         if (file && !closefd) {
             // hack to not close the fd when the FILE pointer is closed
@@ -94,16 +106,21 @@ mp_obj_t mp_io_buffer_new(const mp_obj_type_t *type, mp_obj_t name, mp_obj_t mod
     if (!file) {
         mp_raise_OSError(errno);
     }
-    return mp_io_buffer_alloc(type, file, buffer_size, flags);
+    mp_obj_io_buffer_t *self = mp_obj_malloc_with_finaliser(mp_obj_io_buffer_t, type);
+    mp_io_buffer_init(self, file, buffer_size, flags & O_ACCMODE);
+    return MP_OBJ_FROM_PTR(self);
 }
 
-// static mp_obj_t mp_io_buffer_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
-//     const qstr kws[] = { MP_QSTR_raw, MP_QSTR_buffer_size, 0 };
-//     mp_obj_t raw_obj;
-//     mp_int_t buffer_size = MP_OS_DEFAULT_BUFFER_SIZE;
-//     parse_args_and_kw(n_args, n_kw, args, "O|i", kws, &buffer_obj, &buffer_size);
+static mp_obj_t mp_io_buffer_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
+    const qstr kws[] = { MP_QSTR_raw, MP_QSTR_buffer_size, 0 };
+    mp_obj_t raw_obj;
+    mp_int_t buffer_size = MP_OS_DEFAULT_BUFFER_SIZE;
+    parse_args_and_kw(n_args, n_kw, args, "O|i", kws, &raw_obj, &buffer_size);
 
-// }
+    int fd = mp_os_get_fd(raw_obj);
+    mp_obj_t mode = mp_load_attr(raw_obj, MP_QSTR_mode);
+    return mp_io_buffer_new(type, MP_OBJ_NEW_SMALL_INT(fd), mode, buffer_size, true);
+}
 
 __attribute__((visibility("hidden")))
 void mp_io_buffer_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
@@ -165,6 +182,12 @@ static mp_obj_t mp_io_buffer_isatty(mp_obj_t self_in) {
 __attribute__((visibility("hidden")))
 MP_DEFINE_CONST_FUN_OBJ_1(mp_io_buffer_isatty_obj, mp_io_buffer_isatty);
 
+static size_t mp_io_fread(FILE *file, void *buf, size_t size) {
+    int ret;
+    MP_OS_CALL(ret, fread, buf, 1, size, file);
+    return ret;
+}
+
 static mp_obj_t mp_io_buffer_read(size_t n_args, const mp_obj_t *args) {
     mp_obj_io_buffer_t *self = mp_io_buffer_get(args[0], FREAD);
     size_t size = n_args > 1 ? mp_obj_get_int(args[1]) : -1;
@@ -175,7 +198,7 @@ static mp_obj_t mp_io_buffer_read(size_t n_args, const mp_obj_t *args) {
         if (out_buffer.len == out_buffer.alloc) {
             vstr_hint_size(&out_buffer, MP_OS_DEFAULT_BUFFER_SIZE);
         }
-        size_t br = fread(out_buffer.buf + out_buffer.len, 1, MIN(size, out_buffer.alloc) - out_buffer.len, self->file);
+        size_t br = mp_io_fread(self->file, out_buffer.buf + out_buffer.len, MIN(size, out_buffer.alloc) - out_buffer.len);
         if (br > 0) {
             out_buffer.len += br;
         }
@@ -202,7 +225,7 @@ static mp_obj_t mp_io_buffer_readinto(mp_obj_t self_in, mp_obj_t b_in) {
     mp_buffer_info_t bufinfo;
     mp_get_buffer_raise(b_in, &bufinfo, MP_BUFFER_WRITE);
 
-    size_t br = fread(bufinfo.buf, 1, bufinfo.len, self->file);
+    size_t br = mp_io_fread(self->file, bufinfo.buf, bufinfo.len);
     if ((br > 0) || feof(self->file)) {
         return mp_obj_new_int(br);
     }
@@ -212,9 +235,24 @@ static mp_obj_t mp_io_buffer_readinto(mp_obj_t self_in, mp_obj_t b_in) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_2(mp_io_buffer_readinto_obj, mp_io_buffer_readinto);
 
+static int mp_io_freadline(FILE *file, vstr_t *out_buffer, size_t max_len) {
+    int c = EOF;
+    while (out_buffer->len < max_len) {
+        c = fgetc(file);
+        if (c == EOF) {
+            break;
+        }
+        out_buffer->buf[out_buffer->len++] = c;
+        if (c == '\n') {
+            break;
+        }
+    }
+    return c;
+}
+
 static mp_obj_t mp_io_buffer_readline(size_t n_args, const mp_obj_t *args) {
     mp_obj_io_buffer_t *self = mp_io_buffer_get(args[0], FREAD);
-    size_t size = (n_args > 1) ? mp_obj_get_int(args[1]) : -1;
+    size_t size = ((n_args > 1) && (args[1] != mp_const_none)) ? mp_obj_get_int(args[1]) : -1;
 
     vstr_t out_buffer;
     vstr_init(&out_buffer, MIN(size, MP_OS_DEFAULT_BUFFER_SIZE));
@@ -223,9 +261,9 @@ static mp_obj_t mp_io_buffer_readline(size_t n_args, const mp_obj_t *args) {
             vstr_hint_size(&out_buffer, MP_OS_DEFAULT_BUFFER_SIZE);
         }
         // fgets just calls fgetc in a loop, so it is easier to create our own loop
-        int c = fgetc(self->file);
+        int c;
+        MP_OS_CALL(c, mp_io_freadline, self->file, &out_buffer, MIN(size, out_buffer.alloc));
         if (c != EOF) {
-            vstr_add_byte(&out_buffer, c);
             if (c == '\n') {
                 break;
             }             
@@ -272,12 +310,18 @@ static mp_obj_t mp_io_buffer_writable(mp_obj_t self_in) {
 __attribute__((visibility("hidden")))
 MP_DEFINE_CONST_FUN_OBJ_1(mp_io_buffer_writable_obj, mp_io_buffer_writable);
 
+static size_t mp_io_fwrite(FILE *file, const void *buf, size_t size) {
+    int ret;
+    MP_OS_CALL(ret, fwrite, buf, 1, size, file);
+    return ret;
+}
+
 static mp_obj_t mp_io_buffer_write(mp_obj_t self_in, mp_obj_t b_in) {
     mp_obj_io_buffer_t *self = mp_io_buffer_get(self_in, FWRITE);
     mp_buffer_info_t bufinfo;
     mp_get_buffer_raise(b_in, &bufinfo, MP_BUFFER_READ);
 
-    size_t bw = fwrite(bufinfo.buf, 1, bufinfo.len, self->file);
+    size_t bw = mp_io_fwrite(self->file, bufinfo.buf, bufinfo.len);
     if ((bw > 0) || feof(self->file)) {
         return mp_obj_new_int(bw);
     }
@@ -289,7 +333,7 @@ static MP_DEFINE_CONST_FUN_OBJ_2(mp_io_buffer_write_obj, mp_io_buffer_write);
 
 static mp_uint_t mp_io_buffer_stream_read(mp_obj_t obj, void *buf, mp_uint_t size, int *errcode) {
     mp_obj_io_buffer_t *self = mp_io_buffer_get(obj, FREAD);
-    size_t br = fread(buf, 1, size, self->file);
+    size_t br = mp_io_fread(self->file, buf, size);
     if (br > 0) {
         return br;
     }
@@ -302,7 +346,7 @@ static mp_uint_t mp_io_buffer_stream_read(mp_obj_t obj, void *buf, mp_uint_t siz
 
 static mp_uint_t mp_io_buffer_stream_write(mp_obj_t obj, const void *buf, mp_uint_t size, int *errcode) {
     mp_obj_io_buffer_t *self = mp_io_buffer_get(obj, FWRITE);
-    size_t bw = fwrite(buf, 1, size, self->file);
+    size_t bw = mp_io_fwrite(self->file, buf, size);
     if (bw > 0) {
         return bw;
     }
@@ -348,11 +392,12 @@ __attribute__((visibility("hidden")))
 MP_DEFINE_CONST_OBJ_TYPE(
     mp_type_io_buffer,
     MP_QSTR_BufferedIO,
-    MP_TYPE_FLAG_ITER_IS_ITERNEXT,
-    // make_new, mp_io_buffer_make_new,
+    MP_TYPE_FLAG_ITER_IS_ITERNEXT | MP_TYPE_FLAG_TRUE_SELF,
+    make_new, mp_io_buffer_make_new,
     // print, mp_io_buffer_print,
     attr, mp_io_buffer_attr,
     iter, &mp_io_base_iternext,
     protocol, &mp_io_buffer_stream_p,
-    locals_dict, &mp_io_buffer_locals_dict
+    locals_dict, &mp_io_buffer_locals_dict,
+    parent, &mp_type_io_base
     );

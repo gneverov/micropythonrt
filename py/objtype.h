@@ -33,11 +33,16 @@
 typedef struct _mp_obj_instance_t {
     mp_obj_base_t base;
     mp_map_t members;
+    #if MICROPY_PY_WEAKREF
+    struct mp_obj_weakref *weakref;
+    #endif
     mp_obj_t subobj[];
     // TODO maybe cache __getattr__ and __setattr__ for efficient lookup of them
 } mp_obj_instance_t;
 
 int instance_count_native_bases(const mp_obj_type_t *type, const mp_obj_type_t **last_native_base);
+
+MP_DECLARE_CONST_FUN_OBJ_KW(native_base_init_wrapper_obj);
 
 #if MICROPY_CPYTHON_COMPAT
 // this is needed for object.__new__

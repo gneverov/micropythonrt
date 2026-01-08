@@ -1082,7 +1082,7 @@ static mp_obj_t checked_fun_call(mp_obj_t self_in, size_t n_args, size_t n_kw, c
     mp_obj_checked_fun_t *self = MP_OBJ_TO_PTR(self_in);
     if (n_args > 0) {
         const mp_obj_type_t *arg0_type = mp_obj_get_type(args[0]);
-        if (arg0_type != self->type) {
+        if (!mp_obj_is_subclass_fast(arg0_type, self->type)) {
             #if MICROPY_ERROR_REPORTING != MICROPY_ERROR_REPORTING_DETAILED
             mp_raise_TypeError(MP_ERROR_TEXT("argument has wrong type"));
             #else
@@ -1205,6 +1205,18 @@ void mp_load_method_maybe(mp_obj_t obj, qstr attr, mp_obj_t *dest) {
         dest[0] = MP_OBJ_FROM_PTR(&mp_builtin_next_obj);
         dest[1] = obj;
         return;
+    }
+    if (attr == MP_QSTR___iter__) {
+        if (TYPE_HAS_ITERNEXT(type)) {
+            dest[0] = MP_OBJ_FROM_PTR(&mp_builtin_id_obj);
+            dest[1] = obj;
+            return;
+        }
+        if (MP_OBJ_TYPE_HAS_SLOT(type, iter)) {
+            dest[0] = MP_OBJ_FROM_PTR(&mp_builtin_iter_obj);
+            dest[1] = obj;
+            return;
+        }
     }
     if (MP_OBJ_TYPE_HAS_SLOT(type, attr)) {
         // this type can do its own load, so call it
@@ -1728,17 +1740,63 @@ NORETURN void mp_raise_TypeError_int_conversion(mp_const_obj_t arg) {
     #endif
 }
 
-NORETURN void mp_raise_OSError(int errno_) {
-    mp_raise_type_arg(&mp_type_OSError, MP_OBJ_NEW_SMALL_INT(errno_));
+NORETURN void mp_raise_OSError_with_filename(int errno_, mp_obj_t filename) {
+    const mp_obj_type_t *exc_type = &mp_type_OSError;
+    switch (errno_) {
+        case MP_EAGAIN:
+        case MP_EALREADY:
+        case MP_EINPROGRESS:
+            exc_type = &mp_type_BlockingIOError;
+            break;
+        case MP_EPIPE:
+            // case MP_ESHUTDOWN:
+            exc_type = &mp_type_BrokenPipeError;
+            break;
+        case MP_ECONNABORTED:
+            exc_type = &mp_type_ConnectionAbortedError;
+            break;
+        case MP_ECONNREFUSED:
+            exc_type = &mp_type_ConnectionRefusedError;
+            break;
+        case MP_ECONNRESET:
+            exc_type = &mp_type_ConnectionResetError;
+            break;
+        case MP_EINTR:
+            exc_type = &mp_type_InterruptedError;
+            break;
+        case MP_EISDIR:
+            exc_type = &mp_type_IsADirectoryError;
+            break;
+        case MP_ENOTDIR:
+            exc_type = &mp_type_NotADirectoryError;
+            break;
+        case MP_EACCES:
+        case MP_EPERM:
+            exc_type = &mp_type_PermissionError;
+            break;
+        case MP_ETIMEDOUT:
+            exc_type = &mp_type_TimeoutError;
+            break;
+        case MP_EEXIST:
+            exc_type = &mp_type_FileExistsError;
+            break;
+        case MP_ENOENT:
+            exc_type = &mp_type_FileNotFoundError;
+            break;
+        default:
+            break;
+    }
+    mp_obj_t args[] = {
+        MP_OBJ_NEW_SMALL_INT(errno_),
+        mp_obj_new_str_from_cstr(strerror(errno_)),
+        filename ? filename : MP_OBJ_NULL,
+    };
+    mp_obj_t exc = mp_obj_exception_make_new(exc_type, filename ? 3 : 2, 0, args);
+    nlr_raise(exc);
 }
 
-NORETURN void mp_raise_OSError_with_filename(int errno_, const char *filename) {
-    vstr_t vstr;
-    vstr_init(&vstr, 32);
-    vstr_printf(&vstr, "can't open %s", filename);
-    mp_obj_t o_str = mp_obj_new_str_from_vstr(&vstr);
-    mp_obj_t args[2] = { MP_OBJ_NEW_SMALL_INT(errno_), MP_OBJ_FROM_PTR(o_str)};
-    nlr_raise(mp_obj_exception_make_new(&mp_type_OSError, 2, 0, args));
+NORETURN void mp_raise_OSError(int errno_) {
+    mp_raise_OSError_with_filename(errno_, NULL);
 }
 
 #if MICROPY_STACK_CHECK || MICROPY_ENABLE_PYSTACK

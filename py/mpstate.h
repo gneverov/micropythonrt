@@ -297,6 +297,11 @@ typedef struct _mp_state_thread_t {
     #if MICROPY_PY_SSL_MBEDTLS_NEED_ACTIVE_CONTEXT
     struct _mp_obj_ssl_context_t *tls_ssl_context;
     #endif
+
+    #if MICROPY_PY_THREADING
+    mp_obj_t thread_obj;
+    mp_obj_t thread_locals;
+    #endif
 } mp_state_thread_t;
 
 // This structure combines the above 3 structures.

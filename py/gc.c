@@ -66,17 +66,11 @@
 #define AT_HEAD (1)
 #define AT_TAIL (2)
 #define AT_MARK (3)
+#define AT_FINALIZER (4)
+#define AT_WEAKREF (8)
+// #define AT_MASK (15)
 
-#define BLOCKS_PER_ATB (4)
-#define ATB_MASK_0 (0x03)
-#define ATB_MASK_1 (0x0c)
-#define ATB_MASK_2 (0x30)
-#define ATB_MASK_3 (0xc0)
-
-#define ATB_0_IS_FREE(a) (((a) & ATB_MASK_0) == 0)
-#define ATB_1_IS_FREE(a) (((a) & ATB_MASK_1) == 0)
-#define ATB_2_IS_FREE(a) (((a) & ATB_MASK_2) == 0)
-#define ATB_3_IS_FREE(a) (((a) & ATB_MASK_3) == 0)
+#define BLOCKS_PER_ATB 2
 
 #if MICROPY_GC_SPLIT_HEAP
 #define NEXT_AREA(area) ((area)->next)
@@ -84,13 +78,16 @@
 #define NEXT_AREA(area) (NULL)
 #endif
 
-#define BLOCK_SHIFT(block) (2 * ((block) & (BLOCKS_PER_ATB - 1)))
-#define ATB_GET_KIND(area, block) (((area)->gc_alloc_table_start[(block) / BLOCKS_PER_ATB] >> BLOCK_SHIFT(block)) & 3)
-#define ATB_ANY_TO_FREE(area, block) do { area->gc_alloc_table_start[(block) / BLOCKS_PER_ATB] &= (~(AT_MARK << BLOCK_SHIFT(block))); } while (0)
-#define ATB_FREE_TO_HEAD(area, block) do { area->gc_alloc_table_start[(block) / BLOCKS_PER_ATB] |= (AT_HEAD << BLOCK_SHIFT(block)); } while (0)
-#define ATB_FREE_TO_TAIL(area, block) do { area->gc_alloc_table_start[(block) / BLOCKS_PER_ATB] |= (AT_TAIL << BLOCK_SHIFT(block)); } while (0)
-#define ATB_HEAD_TO_MARK(area, block) do { area->gc_alloc_table_start[(block) / BLOCKS_PER_ATB] |= (AT_MARK << BLOCK_SHIFT(block)); } while (0)
-#define ATB_MARK_TO_HEAD(area, block) do { area->gc_alloc_table_start[(block) / BLOCKS_PER_ATB] &= (~(AT_TAIL << BLOCK_SHIFT(block))); } while (0)
+#define ATB_GET_FLAGS(area, block) ((area)->gc_alloc_table_start[(block) / BLOCKS_PER_ATB] >> ((8 / BLOCKS_PER_ATB) * ((block) & (BLOCKS_PER_ATB - 1))))
+#define ATB_OR_FLAGS(area, block, value) do { ((area)->gc_alloc_table_start[(block) / BLOCKS_PER_ATB] |= ((value) << ((8 / BLOCKS_PER_ATB) * ((block) & (BLOCKS_PER_ATB - 1))))); } while (0)
+#define ATB_NAND_FLAGS(area, block, value) do { ((area)->gc_alloc_table_start[(block) / BLOCKS_PER_ATB] &= ~((value) << ((8 / BLOCKS_PER_ATB) * ((block) & (BLOCKS_PER_ATB - 1))))); } while (0)
+
+#define ATB_GET_KIND(area, block) (ATB_GET_FLAGS(area, block) & 3)
+#define ATB_ANY_TO_FREE(area, block) ATB_NAND_FLAGS(area, block, AT_MARK)
+#define ATB_FREE_TO_HEAD(area, block) ATB_OR_FLAGS(area, block, AT_HEAD)
+#define ATB_FREE_TO_TAIL(area, block) ATB_OR_FLAGS(area, block, AT_TAIL)
+#define ATB_HEAD_TO_MARK(area, block) ATB_OR_FLAGS(area, block, AT_MARK)
+#define ATB_MARK_TO_HEAD(area, block) ATB_NAND_FLAGS(area, block, AT_TAIL)
 
 #define BLOCK_FROM_PTR(area, ptr) (((byte *)(ptr) - area->gc_pool_start) / BYTES_PER_BLOCK)
 #define PTR_FROM_BLOCK(area, block) (((block) * BYTES_PER_BLOCK + (uintptr_t)area->gc_pool_start))
@@ -101,7 +98,8 @@
 // being interpreted as AT_TAIL.
 #define ALLOC_TABLE_GAP_BYTE (1)
 
-#if MICROPY_ENABLE_FINALISER
+#if !MICROPY_ENABLE_FINALISER
+#elif !MICROPY_PY_WEAKREF
 // FTB = finaliser table byte
 // if set, then the corresponding block may have a finaliser
 
@@ -110,6 +108,11 @@
 #define FTB_GET(area, block) ((area->gc_finaliser_table_start[(block) / BLOCKS_PER_FTB] >> ((block) & 7)) & 1)
 #define FTB_SET(area, block) do { area->gc_finaliser_table_start[(block) / BLOCKS_PER_FTB] |= (1 << ((block) & 7)); } while (0)
 #define FTB_CLEAR(area, block) do { area->gc_finaliser_table_start[(block) / BLOCKS_PER_FTB] &= (~(1 << ((block) & 7))); } while (0)
+#else
+#define BLOCKS_PER_FTB (-1u)
+#define FTB_GET(area, block) (ATB_GET_FLAGS(area, block) & AT_FINALIZER)
+#define FTB_SET(area, block) ATB_OR_FLAGS(area, block, AT_FINALIZER)
+#define FTB_CLEAR(area, block) ATB_NAND_FLAGS(area, block, AT_FINALIZER)
 #endif
 
 #if MICROPY_PY_THREAD && !MICROPY_PY_THREAD_GIL
@@ -142,7 +145,7 @@ static void gc_setup_area(mp_state_mem_area_t *area, void *start, void *end) {
 
     area->gc_alloc_table_start = (byte *)start;
 
-    #if MICROPY_ENABLE_FINALISER
+    #if MICROPY_ENABLE_FINALISER && !MICROPY_PY_WEAKREF
     size_t gc_finaliser_table_byte_len = (area->gc_alloc_table_byte_len * BLOCKS_PER_ATB + BLOCKS_PER_FTB - 1) / BLOCKS_PER_FTB;
     area->gc_finaliser_table_start = area->gc_alloc_table_start + area->gc_alloc_table_byte_len + ALLOC_TABLE_GAP_BYTE;
     #endif
@@ -151,11 +154,11 @@ static void gc_setup_area(mp_state_mem_area_t *area, void *start, void *end) {
     area->gc_pool_start = (byte *)end - gc_pool_block_len * BYTES_PER_BLOCK;
     area->gc_pool_end = end;
 
-    #if MICROPY_ENABLE_FINALISER
+    #if MICROPY_ENABLE_FINALISER && !MICROPY_PY_WEAKREF
     assert(area->gc_pool_start >= area->gc_finaliser_table_start + gc_finaliser_table_byte_len);
     #endif
 
-    #if MICROPY_ENABLE_FINALISER
+    #if MICROPY_ENABLE_FINALISER && !MICROPY_PY_WEAKREF
     // clear ATB's and FTB's
     memset(area->gc_alloc_table_start, 0, gc_finaliser_table_byte_len + area->gc_alloc_table_byte_len + ALLOC_TABLE_GAP_BYTE);
     #else
@@ -506,11 +509,12 @@ static void gc_sweep(void) {
                             mp_obj_t dest[2];
                             mp_load_method_maybe(MP_OBJ_FROM_PTR(obj), MP_QSTR___del__, dest);
                             if (dest[0] != MP_OBJ_NULL) {
+                                // mp_printf(&mp_plat_print, "gc: calling finaliser %q\n", (int)obj->type->name);
                                 // load_method returned a method, execute it in a protected environment
                                 #if MICROPY_ENABLE_SCHEDULER
                                 mp_sched_lock();
                                 #endif
-                                mp_call_function_1_protected(dest[0], dest[1]);
+                                mp_call_function_n_protected(dest[0], 1, &dest[1]);
                                 #if MICROPY_ENABLE_SCHEDULER
                                 mp_sched_unlock();
                                 #endif
@@ -519,6 +523,13 @@ static void gc_sweep(void) {
                         // clear finaliser flag
                         FTB_CLEAR(area, block);
                     }
+                    #if MICROPY_PY_WEAKREF
+                    if (ATB_GET_FLAGS(area, block) & AT_WEAKREF) {
+                        void mp_weakref_finalize(mp_obj_t target);
+                        mp_weakref_finalize(MP_OBJ_FROM_PTR(PTR_FROM_BLOCK(area, block)));
+                        ATB_NAND_FLAGS(area, block, AT_WEAKREF);
+                    }
+                    #endif
                     #endif
                     free_tail = 1;
                     DEBUG_printf("gc_sweep(%p)\n", (void *)PTR_FROM_BLOCK(area, block));
@@ -770,14 +781,10 @@ void *gc_alloc(size_t n_bytes, unsigned int alloc_flags) {
         // look for a run of n_blocks available blocks
         for (; area != NULL; area = NEXT_AREA(area), i = 0) {
             n_free = 0;
-            for (i = area->gc_last_free_atb_index; i < area->gc_alloc_table_byte_len; i++) {
+            for (i = area->gc_last_free_atb_index * BLOCKS_PER_ATB; i < area->gc_alloc_table_byte_len * BLOCKS_PER_ATB; i++) {
                 MICROPY_GC_HOOK_LOOP(i);
-                byte a = area->gc_alloc_table_start[i];
                 // *FORMAT-OFF*
-                if (ATB_0_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 0; goto found; } } else { n_free = 0; }
-                if (ATB_1_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 1; goto found; } } else { n_free = 0; }
-                if (ATB_2_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 2; goto found; } } else { n_free = 0; }
-                if (ATB_3_IS_FREE(a)) { if (++n_free >= n_blocks) { i = i * BLOCKS_PER_ATB + 3; goto found; } } else { n_free = 0; }
+                if (ATB_GET_KIND(area, i) == AT_FREE) { if (++n_free >= n_blocks) { goto found; } } else { n_free = 0; }
                 // *FORMAT-ON*
             }
 
@@ -1132,6 +1139,44 @@ void *gc_realloc(void *ptr_in, size_t n_bytes, bool allow_move) {
     return ptr_out;
 }
 
+#if MICROPY_PY_WEAKREF
+void gc_set_weakref(void *ptr, bool value) {
+    if (MP_STATE_THREAD(gc_lock_depth) > 0) {
+        // Cannot free while the GC is locked. However free is an optimisation
+        // to reclaim the memory immediately, this means it will now be left
+        // until the next collection.
+        return;
+    }
+
+    GC_ENTER();
+
+    if (ptr == NULL) {
+        // free(NULL) is a no-op
+        GC_EXIT();
+        return;
+    }
+
+    // get the GC block number corresponding to this pointer
+    mp_state_mem_area_t *area;
+    #if MICROPY_GC_SPLIT_HEAP
+    area = gc_get_ptr_area(ptr);
+    assert(area);
+    #else
+    assert(VERIFY_PTR(ptr));
+    area = &MP_STATE_MEM(area);
+    #endif
+
+    size_t block = BLOCK_FROM_PTR(area, ptr);
+    assert(ATB_GET_KIND(area, block) == AT_HEAD);
+
+    if (value) {
+        ATB_OR_FLAGS(area, block, AT_WEAKREF);
+    } else {
+        ATB_NAND_FLAGS(area, block, AT_WEAKREF);
+    }
+}
+#endif
+
 void gc_dump_info(const mp_print_t *print) {
     gc_info_t info;
     gc_info(&info);
@@ -1278,23 +1323,59 @@ void gc_dump_alloc_table(const mp_print_t *print) {
     GC_EXIT();
 }
 
-void gc_find_ptrs(const mp_print_t *print, void *addr) {
-    void **begin = (void **)MP_STATE_MEM(area).gc_pool_start;
-    void **end = (void **)MP_STATE_MEM(area).gc_pool_end;
-    for (void **ptr = begin; ptr < end; ptr++) {
-        if (*ptr == addr) {
-            mp_printf(print, "%p, ", ptr);
-        }
-    }
-    mp_print_str(print, "\n");
-}
 
-void *gc_verify_ptr(void *ptr) {
-    if (!VERIFY_PTR(ptr)) {
+static void *gc_get_head(void *ptr) {
+    mp_state_mem_area_t *area = &MP_STATE_MEM(area);
+    size_t head = BLOCK_FROM_PTR(area, ptr);
+    while (ATB_GET_KIND(area, head) == AT_TAIL) {
+        assert(head > 0);
+        head--;
+    }
+    if (ATB_GET_KIND(area, head) == AT_FREE) {
         return NULL;
     }
+    assert(ATB_GET_KIND(area, head) == AT_HEAD);
+    return area->gc_pool_start + head * BYTES_PER_BLOCK;
+}
+
+size_t gc_find_ptrs(void *addr, size_t len, void ***buf) {
+    void **begin = (void **)MP_STATE_MEM(area).gc_pool_start;
+    void **end = (void **)MP_STATE_MEM(area).gc_pool_end;
+    size_t i = 0;
+    for (void **ptr = begin; ptr < end; ptr++) {
+        if (*ptr != addr) {
+            continue;
+        }
+        void *head_ptr = gc_get_head(ptr);
+        if (!head_ptr) {
+            continue;
+        }
+        if (i < len) {
+            buf[i] = head_ptr;
+        }
+        i++;
+    }
+    return i;
+}
+
+
+void *gc_verify_ptr(void *ptr) {
+    uint tag = (uintptr_t)ptr >> 28;
+    if (tag == 2) {
+        ptr = (void *)__align_down((uintptr_t)ptr, BYTES_PER_BLOCK);
+        if (!VERIFY_PTR(ptr)) {
+            return NULL;
+        }
+        ptr = gc_get_head(ptr);
+        if (!ptr) {
+            return NULL;
+        }
+    } else if (tag != 1) {
+        return NULL;
+    }
+
     void *type = *(void **)ptr;
-    if (!VERIFY_PTR(type) && (type < (void *)0x10000000 || type >= (void *)0x20000000)) {
+    if (!VERIFY_PTR(type) && (((uintptr_t)ptr >> 28) != 1)) {
         return NULL;
     }
     void *type_type = *(void **)type;

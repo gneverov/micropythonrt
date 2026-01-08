@@ -155,7 +155,7 @@ static mp_obj_t mp_obj_new_namedtuple_type(qstr name, size_t n_fields, mp_obj_t 
     mp_obj_namedtuple_type_t *o = mp_obj_new_namedtuple_base(n_fields, fields);
     mp_obj_type_t *type = (mp_obj_type_t *)&o->base;
     type->base.type = &mp_type_type;
-    type->flags = MP_TYPE_FLAG_EQ_CHECKS_OTHER_TYPE; // can match tuple
+    type->flags = MP_TYPE_FLAG_IS_NAMEDTUPLE | MP_TYPE_FLAG_EQ_CHECKS_OTHER_TYPE; // can match tuple
     type->name = name;
     MP_OBJ_TYPE_SET_SLOT(type, make_new, namedtuple_make_new, 0);
     MP_OBJ_TYPE_SET_SLOT(type, print, namedtuple_print, 1);

@@ -396,20 +396,33 @@ static mp_obj_t dict_update(size_t n_args, const mp_obj_t *args, mp_map_t *kwarg
                 }
             }
         } else {
-            // update from a generic iterable of pairs
-            mp_obj_t iter = mp_getiter(args[1], NULL);
-            mp_obj_t next = MP_OBJ_NULL;
-            while ((next = mp_iternext(iter)) != MP_OBJ_STOP_ITERATION) {
-                mp_obj_t inneriter = mp_getiter(next, NULL);
-                mp_obj_t key = mp_iternext(inneriter);
-                mp_obj_t value = mp_iternext(inneriter);
-                mp_obj_t stop = mp_iternext(inneriter);
-                if (key == MP_OBJ_STOP_ITERATION
-                    || value == MP_OBJ_STOP_ITERATION
-                    || stop != MP_OBJ_STOP_ITERATION) {
-                    mp_raise_ValueError(MP_ERROR_TEXT("dict update sequence has wrong length"));
-                } else {
-                    mp_map_lookup(&self->map, key, MP_MAP_LOOKUP_ADD_IF_NOT_FOUND)->value = value;
+            mp_obj_t keys_args[2];
+            mp_load_method_maybe(args[1], MP_QSTR_keys, keys_args);
+            if (keys_args[0] != MP_OBJ_NULL) {
+                // update from mapping object
+                mp_obj_t keys = mp_call_method_n_kw(0, 0, keys_args);
+                mp_obj_t iter = mp_getiter(keys, NULL);
+                mp_obj_t next = MP_OBJ_NULL;
+                while ((next = mp_iternext(iter)) != MP_OBJ_STOP_ITERATION) {
+                    mp_obj_t value = mp_obj_subscr(args[1], next, MP_OBJ_SENTINEL);
+                    mp_map_lookup(&self->map, next, MP_MAP_LOOKUP_ADD_IF_NOT_FOUND)->value = value;
+                }
+            } else {
+                // update from a generic iterable of pairs
+                mp_obj_t iter = mp_getiter(args[1], NULL);
+                mp_obj_t next = MP_OBJ_NULL;
+                while ((next = mp_iternext(iter)) != MP_OBJ_STOP_ITERATION) {
+                    mp_obj_t inneriter = mp_getiter(next, NULL);
+                    mp_obj_t key = mp_iternext(inneriter);
+                    mp_obj_t value = mp_iternext(inneriter);
+                    mp_obj_t stop = mp_iternext(inneriter);
+                    if (key == MP_OBJ_STOP_ITERATION
+                        || value == MP_OBJ_STOP_ITERATION
+                        || stop != MP_OBJ_STOP_ITERATION) {
+                        mp_raise_ValueError(MP_ERROR_TEXT("dict update sequence has wrong length"));
+                    } else {
+                        mp_map_lookup(&self->map, key, MP_MAP_LOOKUP_ADD_IF_NOT_FOUND)->value = value;
+                    }
                 }
             }
         }
@@ -628,6 +641,22 @@ MP_DEFINE_CONST_OBJ_TYPE(
 MP_DEFINE_CONST_OBJ_TYPE(
     mp_type_ordereddict,
     MP_QSTR_OrderedDict,
+    MP_TYPE_FLAG_ITER_IS_GETITER,
+    make_new, mp_obj_dict_make_new,
+    print, dict_print,
+    unary_op, dict_unary_op,
+    binary_op, dict_binary_op,
+    subscr, dict_subscr,
+    iter, dict_getiter,
+    parent, &mp_type_dict,
+    locals_dict, &dict_locals_dict
+    );
+#endif
+
+#if MICROPY_PY_FREEZE
+MP_DEFINE_CONST_OBJ_TYPE(
+    mp_type_frozendict,
+    MP_QSTR_frozendict,
     MP_TYPE_FLAG_ITER_IS_GETITER,
     make_new, mp_obj_dict_make_new,
     print, dict_print,

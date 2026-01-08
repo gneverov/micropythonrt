@@ -67,6 +67,10 @@ void gc_free(void *ptr); // does not call finaliser
 size_t gc_nbytes(const void *ptr);
 void *gc_realloc(void *ptr, size_t n_bytes, bool allow_move);
 
+#if MICROPY_PY_WEAKREF
+void gc_set_weakref(void *ptr, bool value);
+#endif
+
 typedef struct _gc_info_t {
     size_t total;
     size_t used;
@@ -83,7 +87,7 @@ typedef struct _gc_info_t {
 void gc_info(gc_info_t *info);
 void gc_dump_info(const mp_print_t *print);
 void gc_dump_alloc_table(const mp_print_t *print);
-void gc_find_ptrs(const mp_print_t *print, void *addr);
+size_t gc_find_ptrs(void *addr, size_t len, void ***buf);
 void *gc_verify_ptr(void *ptr);
 
 #endif // MICROPY_INCLUDED_PY_GC_H

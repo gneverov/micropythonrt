@@ -41,7 +41,6 @@
 #include "hardware/watchdog.h"
 #include "hardware/xosc.h"
 #include "pico/bootrom.h"
-#include "pico/stdlib.h"
 #include "pico/unique_id.h"
 #include "machine/audio_out_pwm.h"
 #include "machine/pin.h"

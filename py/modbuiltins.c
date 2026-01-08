@@ -733,6 +733,19 @@ static const mp_rom_map_elem_t mp_module_builtins_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_NameError), MP_ROM_PTR(&mp_type_NameError) },
     { MP_ROM_QSTR(MP_QSTR_NotImplementedError), MP_ROM_PTR(&mp_type_NotImplementedError) },
     { MP_ROM_QSTR(MP_QSTR_OSError), MP_ROM_PTR(&mp_type_OSError) },
+    { MP_ROM_QSTR(MP_QSTR_BlockingIOError), MP_ROM_PTR(&mp_type_BlockingIOError) },
+    { MP_ROM_QSTR(MP_QSTR_ConnectionError), MP_ROM_PTR(&mp_type_ConnectionError) },
+    { MP_ROM_QSTR(MP_QSTR_BrokenPipeError), MP_ROM_PTR(&mp_type_BrokenPipeError) },
+    { MP_ROM_QSTR(MP_QSTR_ConnectionAbortedError), MP_ROM_PTR(&mp_type_ConnectionAbortedError) },
+    { MP_ROM_QSTR(MP_QSTR_ConnectionRefusedError), MP_ROM_PTR(&mp_type_ConnectionRefusedError) },
+    { MP_ROM_QSTR(MP_QSTR_ConnectionResetError), MP_ROM_PTR(&mp_type_ConnectionResetError) },
+    { MP_ROM_QSTR(MP_QSTR_InterruptedError), MP_ROM_PTR(&mp_type_InterruptedError) },
+    { MP_ROM_QSTR(MP_QSTR_IsADirectoryError), MP_ROM_PTR(&mp_type_IsADirectoryError) },
+    { MP_ROM_QSTR(MP_QSTR_NotADirectoryError), MP_ROM_PTR(&mp_type_NotADirectoryError) },
+    { MP_ROM_QSTR(MP_QSTR_PermissionError), MP_ROM_PTR(&mp_type_PermissionError) },
+    { MP_ROM_QSTR(MP_QSTR_TimeoutError), MP_ROM_PTR(&mp_type_TimeoutError) },
+    { MP_ROM_QSTR(MP_QSTR_FileExistsError), MP_ROM_PTR(&mp_type_FileExistsError) },
+    { MP_ROM_QSTR(MP_QSTR_FileNotFoundError), MP_ROM_PTR(&mp_type_FileNotFoundError) },
     { MP_ROM_QSTR(MP_QSTR_OverflowError), MP_ROM_PTR(&mp_type_OverflowError) },
     { MP_ROM_QSTR(MP_QSTR_RuntimeError), MP_ROM_PTR(&mp_type_RuntimeError) },
     #if MICROPY_PY_ASYNC_AWAIT
@@ -744,6 +757,8 @@ static const mp_rom_map_elem_t mp_module_builtins_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_TypeError), MP_ROM_PTR(&mp_type_TypeError) },
     #if MICROPY_PY_BUILTINS_STR_UNICODE
     { MP_ROM_QSTR(MP_QSTR_UnicodeError), MP_ROM_PTR(&mp_type_UnicodeError) },
+    { MP_ROM_QSTR(MP_QSTR_UnicodeDecodeError), MP_ROM_PTR(&mp_type_UnicodeError) },
+    { MP_ROM_QSTR(MP_QSTR_UnicodeEncodeError), MP_ROM_PTR(&mp_type_UnicodeError) },
     #endif
     { MP_ROM_QSTR(MP_QSTR_ValueError), MP_ROM_PTR(&mp_type_ValueError) },
     #if MICROPY_EMIT_NATIVE

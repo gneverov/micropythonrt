@@ -127,4 +127,4 @@ const mp_obj_module_t mp_module_rp2 = {
     .globals = (mp_obj_dict_t *)&rp2_module_globals,
 };
 
-MP_REGISTER_MODULE(MP_QSTR__rp2, mp_module_rp2);
+MP_REGISTER_MODULE(MP_QSTR_rp2, mp_module_rp2);
