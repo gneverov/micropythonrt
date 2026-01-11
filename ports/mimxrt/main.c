@@ -29,7 +29,6 @@
 #include "py/runtime.h"
 #include "py/gc.h"
 #include "py/mperrno.h"
-#include "py/stackctrl.h"
 #include "shared/readline/readline.h"
 #include "shared/runtime/gchelper.h"
 #include "shared/runtime/pyexec.h"
@@ -39,6 +38,7 @@
 #include "led.h"
 #include "pendsv.h"
 #include "modmachine.h"
+#include "modmimxrt.h"
 
 #if MICROPY_PY_LWIP
 #include "lwip/init.h"
@@ -54,7 +54,9 @@
 #endif
 
 #include "systick.h"
+#include "extmod/modmachine.h"
 #include "extmod/modnetwork.h"
+#include "extmod/vfs.h"
 
 extern uint8_t _sstack, _estack, _gc_heap_start, _gc_heap_end;
 
@@ -97,8 +99,7 @@ int main(void) {
         led_init();
         #endif
 
-        mp_stack_set_top(&_estack);
-        mp_stack_set_limit(&_estack - &_sstack - 1024);
+        mp_cstack_init_with_top(&_estack, &_estack - &_sstack);
 
         gc_init(&_gc_heap_start, &_gc_heap_end);
         mp_init();
@@ -112,6 +113,19 @@ int main(void) {
 
         // Execute _boot.py to set up the filesystem.
         pyexec_frozen_module("_boot.py", false);
+
+        #if MICROPY_HW_USB_MSC
+        // Set the USB medium to flash block device.
+        mimxrt_msc_medium = &mimxrt_flash_type;
+
+        #if MICROPY_PY_MACHINE_SDCARD
+        const char *path = "/sdcard";
+        // If SD is mounted, set the USB medium to SD.
+        if (mp_vfs_lookup_path(path, &path) != MP_VFS_NONE) {
+            mimxrt_msc_medium = &machine_sdcard_type;
+        }
+        #endif
+        #endif
 
         // Execute user scripts.
         int ret = pyexec_file_if_exists("boot.py");
@@ -156,8 +170,12 @@ int main(void) {
         #if MICROPY_PY_NETWORK
         mod_network_deinit();
         #endif
+        #if MICROPY_PY_MACHINE_UART
         machine_uart_deinit_all();
+        #endif
+        #if MICROPY_PY_MACHINE_PWM
         machine_pwm_deinit_all();
+        #endif
         soft_timer_deinit();
         gc_sweep_all();
         mp_deinit();

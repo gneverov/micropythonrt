@@ -73,6 +73,11 @@ Q(..)
 Q(.frozen)
 #endif
 
+#if MICROPY_VFS_ROM && MICROPY_VFS_ROM_IOCTL
+Q(/rom)
+Q(/rom/lib)
+#endif
+
 #if MICROPY_ENABLE_PYSTACK
 Q(pystack exhausted)
 #endif

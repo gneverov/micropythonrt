@@ -1,4 +1,4 @@
-// Deinitions common to all SAMD21 boards
+// Definitions common to all SAMD21 boards
 #include "samd21.h"
 
 #define MICROPY_CONFIG_ROM_LEVEL        (MICROPY_CONFIG_ROM_LEVEL_BASIC_FEATURES)
@@ -77,6 +77,9 @@ unsigned long trng_random_u32(int delay);
 #define MICROPY_PY_DEFLATE              (SAMD21_EXTRA_FEATURES)
 #ifndef MICROPY_PY_ONEWIRE
 #define MICROPY_PY_ONEWIRE              (SAMD21_EXTRA_FEATURES)
+#endif
+#ifndef MICROPY_PY_MACHINE_I2C_TARGET
+#define MICROPY_PY_MACHINE_I2C_TARGET   (SAMD21_EXTRA_FEATURES)
 #endif
 
 #ifndef MICROPY_PY_MACHINE_PIN_BOARD_CPU

@@ -140,7 +140,7 @@ static const char *parse_arg(const mp_obj_t arg, const char *format, qstr name, 
                 if (arg != MP_OBJ_NULL) {
                     const mp_obj_type_t *actual_type = mp_obj_get_type(arg);
                     if (!mp_obj_is_subclass_fast(MP_OBJ_FROM_PTR(actual_type), MP_OBJ_FROM_PTR(expected_type))) {
-                        mp_raise_msg_varg(&mp_type_TypeError, "%q: must be %q, not %q", name, actual_type->name, expected_type->name);
+                        mp_raise_msg_varg(&mp_type_TypeError, MP_ERROR_TEXT("%q: must be %q, not %q"), name, actual_type->name, expected_type->name);
                     }
                     if (val) {
                         *val = arg;
@@ -210,7 +210,7 @@ void vparse_args_and_kw(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args, 
 
         if (!found) {
             if (required) {
-                mp_raise_msg_varg(&mp_type_TypeError, "%q: missing", name);
+                mp_raise_msg_varg(&mp_type_TypeError, MP_ERROR_TEXT("%q: missing"), name);
             } else {
                 format = parse_arg(MP_OBJ_NULL, format, name, &vals);
             }
@@ -218,11 +218,11 @@ void vparse_args_and_kw(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args, 
         keywords += (name > 0) ? 1 : 0;
     }
     if (pos < n_args) {
-        mp_raise_msg_varg(&mp_type_TypeError, "function: too many args");
+        mp_raise_msg_varg(&mp_type_TypeError, MP_ERROR_TEXT("function: too many args"));
     }
 
     if ((used_kws + 1) != (1 << kw_args->used)) {
-        mp_raise_msg_varg(&mp_type_TypeError, "function: too many keywords");
+        mp_raise_msg_varg(&mp_type_TypeError, MP_ERROR_TEXT("function: too many keywords"));
     }
 }
 

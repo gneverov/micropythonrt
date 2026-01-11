@@ -905,7 +905,7 @@ typedef struct {
 __attribute__((visibility("hidden")))
 mp_obj_t freeze_clear(void) {
     if (freeze_mode > 0) {
-        mp_raise_msg(&mp_type_RuntimeError, "Freezing in progress");
+        mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("Freezing in progress"));
     }
     for (uint i = 0; i < FLASH_HEAP_NUM_DEVICES; i++) {
         if (flash_heap_truncate(i, NULL) < 0) {
@@ -1101,7 +1101,7 @@ static void freeze_checkpoint_callback(void *ctx) {
 __attribute__((visibility("hidden")))
 mp_obj_t freeze_import_modules(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs) {
     if (freeze_mode < 0) {
-        mp_raise_msg(&mp_type_RuntimeError, "Reboot pending");
+        mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("Reboot pending"));
     }
 
     // Check to see if the 'flash' kwarg was specified and is not None
@@ -1110,7 +1110,7 @@ mp_obj_t freeze_import_modules(size_t n_args, const mp_obj_t *args, mp_map_t *kw
 #if PSRAM_BASE
         // If flash is requested but we've already started using psram, then a reboot is needed
         if (mp_obj_is_true(elem->value) && (freeze_device > 0)) {
-            mp_raise_msg(&mp_type_RuntimeError, "Reboot pending");
+            mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("Reboot pending"));
         }
         // If psram is requested, move checkpoint pointer to psram
         if (!mp_obj_is_true(elem->value)) {

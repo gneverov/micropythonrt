@@ -85,12 +85,34 @@
 #endif
 #endif
 
+// Number of bytes of flash to allocate to the ROMFS partition.
+#ifndef MICROPY_HW_ROMFS_BYTES
+#define MICROPY_HW_ROMFS_BYTES (0)
+#endif
+
+// Number of bytes of flash to allocate to read/write filesystem storage.
+#ifndef MICROPY_HW_FLASH_STORAGE_BYTES
+#define MICROPY_HW_FLASH_STORAGE_BYTES (1408 * 1024)
+#endif
+
 #ifndef MICROPY_CONFIG_ROM_LEVEL
 #define MICROPY_CONFIG_ROM_LEVEL                (MICROPY_CONFIG_ROM_LEVEL_EXTRA_FEATURES)
 #endif
 
+#ifndef MICROPY_HW_ENABLE_PSRAM
+#define MICROPY_HW_ENABLE_PSRAM (0)
+#endif
+
 // Memory allocation policies
+#if MICROPY_HW_ENABLE_PSRAM
+#define MICROPY_GC_STACK_ENTRY_TYPE             uint32_t
+#define MICROPY_ALLOC_GC_STACK_SIZE             (1024) // Avoid slowdown when GC stack overflow causes a full sweep of PSRAM-backed heap
+#else
 #define MICROPY_GC_STACK_ENTRY_TYPE             uint16_t
+#endif
+#ifndef MICROPY_GC_SPLIT_HEAP
+#define MICROPY_GC_SPLIT_HEAP                   MICROPY_HW_ENABLE_PSRAM // whether PSRAM is added to or replaces the heap
+#endif
 #define MICROPY_ALLOC_PATH_MAX                  (128)
 #define MICROPY_QSTR_BYTES_IN_HASH              (1)
 
@@ -103,6 +125,8 @@
 #define MICROPY_EMIT_INLINE_THUMB_FLOAT         (0)
 #elif PICO_RISCV
 #define MICROPY_EMIT_RV32                       (1)
+#define MICROPY_EMIT_RV32_ZBA                   (1)
+#define MICROPY_EMIT_INLINE_RV32                (1)
 #endif
 #define MICROPY_PERSISTENT_CODE_SAVE            (1)
 #define MICROPY_COMP_ALLOW_TOP_LEVEL_AWAIT      (1)
@@ -141,7 +165,8 @@
 #define MICROPY_PY_OS_URANDOM                   (1)
 #define MICROPY_PY_RE_MATCH_GROUPS              (1)
 #define MICROPY_PY_RE_MATCH_SPAN_START_END      (1)
-#define MICROPY_PY_HASHLIB_SHA1                 (0)
+#define MICROPY_PY_HASHLIB_MD5                  (1)
+#define MICROPY_PY_HASHLIB_SHA1                 (1)
 #define MICROPY_PY_CRYPTOLIB                    (0)
 #define MICROPY_PY_TIME_GMTIME_LOCALTIME_MKTIME (1)
 #define MICROPY_PY_TIME_TIME_TIME_NS            (1)
@@ -161,6 +186,7 @@
 #define MICROPY_PY_MACHINE_PWM                  (1)
 #define MICROPY_PY_MACHINE_PWM_INCLUDEFILE      "ports/rp2/machine_pwm.c"
 #define MICROPY_PY_MACHINE_I2C                  (1)
+#define MICROPY_PY_MACHINE_I2C_TARGET           (0)
 #define MICROPY_PY_MACHINE_SOFTI2C              (1)
 // #define MICROPY_PY_MACHINE_I2S                  (1)
 // #define MICROPY_PY_MACHINE_I2S_INCLUDEFILE      "ports/rp2/machine_i2s.c"
@@ -181,7 +207,7 @@
 #define MICROPY_VFS                             (0)
 #define MICROPY_VFS_LFS2                        (0)
 #define MICROPY_VFS_FAT                         (0)
-#define MICROPY_SSL_MBEDTLS                     (0)
+#define MICROPY_SSL_MBEDTLS                     (1)
 #define MICROPY_PY_LWIP_PPP                     (MICROPY_PY_NETWORK_PPP_LWIP)
 #define MICROPY_PY_LWIP_SOCK_RAW                (MICROPY_PY_LWIP)
 #define MICROPY_PY_FREEZE                       (1)
@@ -191,11 +217,12 @@
 #define MICROPY_PY_SYS_EXC_INFO                 (1)
 
 // Hardware timer alarm index. Available range 0-3.
-// Number 3 is currently used by pico-sdk (PICO_TIME_DEFAULT_ALARM_POOL_HARDWARE_ALARM_NUM)
+// Number 3 is currently used by pico-sdk alarm pool (PICO_TIME_DEFAULT_ALARM_POOL_HARDWARE_ALARM_NUM)
 #define MICROPY_HW_SOFT_TIMER_ALARM_NUM         (2)
+#define MICROPY_HW_LIGHTSLEEP_ALARM_NUM         (1)
 
 // fatfs configuration
-#define MICROPY_FATFS_ENABLE_LFN                (1)
+#define MICROPY_FATFS_ENABLE_LFN                (2)
 #define MICROPY_FATFS_LFN_CODE_PAGE             437 /* 1=SFN/ANSI 437=LFN/U.S.(OEM) */
 #define MICROPY_FATFS_RPATH                     (2)
 #if MICROPY_HW_USB_MSC
@@ -228,28 +255,13 @@
 #ifndef MICROPY_PY_WEBREPL
 #define MICROPY_PY_WEBREPL              (0)
 #endif
-#endif
 
 #if MICROPY_PY_NETWORK_CYW43
 #define MICROPY_HW_NIC_CYW43
 #endif
-
-#if MICROPY_PY_NETWORK_NINAW10
-// This Network interface requires the extended socket state.
-#ifndef MICROPY_PY_SOCKET_EXTENDED_STATE
-#define MICROPY_PY_SOCKET_EXTENDED_STATE    (1)
+#ifndef MICROPY_PY_NETWORK_PPP_LWIP
+#define MICROPY_PY_NETWORK_PPP_LWIP     (0)
 #endif
-extern const struct _mp_obj_type_t mod_network_nic_type_nina;
-#define MICROPY_HW_NIC_NINAW10              { MP_ROM_QSTR(MP_QSTR_WLAN), MP_ROM_PTR(&mod_network_nic_type_nina) },
-#else
-#define MICROPY_HW_NIC_NINAW10
-#endif
-
-#if MICROPY_PY_NETWORK_WIZNET5K
-extern const struct _mp_obj_type_t mod_network_nic_type_wiznet5k;
-#define MICROPY_HW_NIC_WIZNET5K             { MP_ROM_QSTR(MP_QSTR_WIZNET5K), MP_ROM_PTR(&mod_network_nic_type_wiznet5k) },
-#else
-#define MICROPY_HW_NIC_WIZNET5K
 #endif
 
 #ifndef MICROPY_BOARD_NETWORK_INTERFACES
@@ -257,9 +269,6 @@ extern const struct _mp_obj_type_t mod_network_nic_type_wiznet5k;
 #endif
 
 #define MICROPY_PORT_NETWORK_INTERFACES \
-    MICROPY_HW_NIC_CYW43 \
-    MICROPY_HW_NIC_NINAW10  \
-    MICROPY_HW_NIC_WIZNET5K \
     MICROPY_BOARD_NETWORK_INTERFACES \
 
 #define MP_STATE_PORT MP_STATE_VM
@@ -282,8 +291,6 @@ extern const struct _mp_obj_type_t mod_network_nic_type_wiznet5k;
 #endif
 
 #define MP_SSIZE_MAX (0x7fffffff)
-typedef intptr_t mp_int_t; // must be pointer size
-typedef uintptr_t mp_uint_t; // must be pointer size
 typedef intptr_t mp_off_t;
 
 // We need to provide a declaration/definition of alloca()

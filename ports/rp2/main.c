@@ -144,7 +144,9 @@ static void mp_main(uint8_t *stack_bottom, uint8_t *stack_top, uint8_t *gc_heap_
         #if MICROPY_PY_BLUETOOTH
         mp_bluetooth_deinit();
         #endif
+        #if MICROPY_PY_MACHINE_PWM
         machine_pwm_deinit_all();
+        #endif
         #if MICROPY_PY_THREAD
         mp_thread_deinit();
         #endif

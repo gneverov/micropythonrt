@@ -157,9 +157,6 @@ LIBSTDCPP_FILE_NAME = "$(shell $(CXX) $(CXXFLAGS) -print-file-name=libstdc++.a)"
 LDFLAGS += -L"$(shell dirname $(LIBSTDCPP_FILE_NAME))"
 endif
 
-# Hook tinyusb USB interrupt if used to service usb task.
-LDFLAGS += --wrap=dcd_event_handler
-
 # Options for mpy-cross
 MPY_CROSS_FLAGS += -march=armv7m
 
@@ -250,6 +247,7 @@ SRC_C += \
 	machine_pin.c \
 	machine_rtc.c \
 	machine_sdcard.c \
+	modrenesas.c \
 	extint.c \
 	usrsw.c \
 	flash.c \
@@ -442,7 +440,8 @@ endef
 
 define GENERATE_BIN
 	$(ECHO) "GEN $(1)"
-	$(Q)$(OBJCOPY) -I ihex -O binary $(2) $(1)
+	$(Q)$(OBJCOPY) -O binary -j .id_code $(2) $(BUILD)/id_code.bin
+	$(Q)$(OBJCOPY) -O binary --remove-section=.id_code $(2) $(1)
 endef
 
 define GENERATE_HEX
@@ -452,7 +451,7 @@ endef
 
 .PHONY:
 
-$(BUILD)/firmware.bin: $(BUILD)/firmware.hex
+$(BUILD)/firmware.bin: $(BUILD)/firmware.elf
 	$(call GENERATE_BIN,$@,$^)
 
 $(BUILD)/firmware.hex: $(BUILD)/firmware.elf

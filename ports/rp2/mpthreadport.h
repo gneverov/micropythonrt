@@ -40,7 +40,7 @@
 typedef struct {
     SemaphoreHandle_t handle;
     StaticSemaphore_t buffer;
-} mp_thread_mutex_t;
+} mp_thread_mutex_t, mp_thread_recursive_mutex_t;
 
 void mp_thread_init(void);
 void mp_thread_deinit(void);
@@ -62,5 +62,17 @@ int mp_thread_mutex_lock(mp_thread_mutex_t *m, int wait);
 void mp_thread_mutex_unlock(mp_thread_mutex_t *m);
 
 bool mp_thread_mutex_check(mp_thread_mutex_t *m);
+
+static inline void mp_thread_recursive_mutex_init(mp_thread_recursive_mutex_t *m) {
+    mp_thread_mutex_init(m);
+}
+
+static inline int mp_thread_recursive_mutex_lock(mp_thread_recursive_mutex_t *m, int wait) {
+    return mp_thread_mutex_lock(m, wait);
+}
+
+static inline void mp_thread_recursive_mutex_unlock(mp_thread_recursive_mutex_t *m) {
+    mp_thread_mutex_unlock(m);
+}
 
 #endif // MICROPY_INCLUDED_RP2_MPTHREADPORT_H

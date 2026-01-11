@@ -8,7 +8,6 @@
 
 #include "extmod/modos_newlib.h"
 #include "extmod/usb/usb_config.h"
-#include "shared/tinyusb/mp_usbd.h"
 #include "py/runtime.h"
 
 #define _PID_MAP(itf, n)  ( (CFG_TUD_##itf) << (n) )
@@ -119,6 +118,7 @@ static mp_obj_t usb_config_device(size_t n_args, const mp_obj_t *args, mp_map_t 
         product_idx = usb_config_str_desc(self, tud_descriptor_string_cb(default_desc->iProduct, 0));
     }
 
+    void mp_usbd_port_get_serial_number(char *serial_buf);
     char serial[MICROPY_HW_USB_DESC_STR_MAX];
     mp_usbd_port_get_serial_number(serial);
     elem = mp_map_lookup(kws, MP_OBJ_NEW_QSTR(MP_QSTR_serial), MP_MAP_LOOKUP);

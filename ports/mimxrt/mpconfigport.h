@@ -29,7 +29,6 @@
 // Board specific definitions
 #include "mpconfigboard.h"
 #include "fsl_common.h"
-#include "lib/nxp_driver/sdk/CMSIS/Include/core_cm7.h"
 
 uint32_t trng_random_u32(void);
 
@@ -55,6 +54,7 @@ uint32_t trng_random_u32(void);
 #define MICROPY_TRACKED_ALLOC               (MICROPY_SSL_MBEDTLS)
 #define MICROPY_READER_VFS                  (1)
 #define MICROPY_ENABLE_GC                   (1)
+#define MICROPY_STACK_CHECK_MARGIN          (1024)
 #define MICROPY_ENABLE_EMERGENCY_EXCEPTION_BUF  (1)
 #define MICROPY_LONGINT_IMPL                (MICROPY_LONGINT_IMPL_MPZ)
 #define MICROPY_SCHEDULER_DEPTH             (8)
@@ -85,6 +85,7 @@ uint32_t trng_random_u32(void);
 #define MICROPY_PY_MACHINE_DISABLE_IRQ_ENABLE_IRQ (1)
 #define MICROPY_PY_MACHINE_ADC              (1)
 #define MICROPY_PY_MACHINE_ADC_INCLUDEFILE  "ports/mimxrt/machine_adc.c"
+#define MICROPY_PY_MACHINE_ADC_READ_UV      (1)
 #define MICROPY_PY_MACHINE_PIN_MAKE_NEW     mp_pin_make_new
 #define MICROPY_PY_MACHINE_BITSTREAM        (1)
 #define MICROPY_PY_MACHINE_DHT_READINTO     (1)
@@ -92,6 +93,13 @@ uint32_t trng_random_u32(void);
 #define MICROPY_PY_MACHINE_PWM              (1)
 #define MICROPY_PY_MACHINE_PWM_INCLUDEFILE  "ports/mimxrt/machine_pwm.c"
 #define MICROPY_PY_MACHINE_I2C              (1)
+#ifndef MICROPY_PY_MACHINE_I2C_TARGET
+#define MICROPY_PY_MACHINE_I2C_TARGET       (1)
+#define MICROPY_PY_MACHINE_I2C_TARGET_INCLUDEFILE "ports/mimxrt/machine_i2c_target.c"
+#define MICROPY_PY_MACHINE_I2C_TARGET_MAX   (FSL_FEATURE_SOC_LPI2C_COUNT)
+#define MICROPY_PY_MACHINE_I2C_TARGET_HARD_IRQ (1)
+#define MICROPY_PY_MACHINE_I2C_TARGET_FINALISER (1)
+#endif
 #ifndef MICROPY_PY_MACHINE_I2S
 #define MICROPY_PY_MACHINE_I2S              (0)
 #endif
@@ -114,14 +122,20 @@ uint32_t trng_random_u32(void);
 #define MICROPY_PY_MACHINE_UART             (1)
 #define MICROPY_PY_MACHINE_UART_INCLUDEFILE "ports/mimxrt/machine_uart.c"
 #define MICROPY_PY_MACHINE_UART_SENDBREAK   (1)
+#ifndef MICROPY_PY_MACHINE_UART_IRQ
 #define MICROPY_PY_MACHINE_UART_IRQ         (1)
+#endif
 #define MICROPY_PY_ONEWIRE                  (1)
+#define MICROPY_PY_MACHINE_BOOTLOADER       (1)
 
 // fatfs configuration used in ffconf.h
-#define MICROPY_FATFS_ENABLE_LFN            (1)
-#define MICROPY_FATFS_RPATH                 (2)
-#define MICROPY_FATFS_MAX_SS                (4096)
+#define MICROPY_FATFS_ENABLE_LFN            (2)
 #define MICROPY_FATFS_LFN_CODE_PAGE         437 /* 1=SFN/ANSI 437=LFN/U.S.(OEM) */
+#define MICROPY_FATFS_USE_LABEL             (1)
+#define MICROPY_FATFS_RPATH                 (2)
+#define MICROPY_FATFS_MULTI_PARTITION       (1)
+#define MICROPY_FATFS_MAX_SS                (4096)
+#define MICROPY_FATFS_EXFAT                 (1)
 
 #ifndef MICROPY_PY_NETWORK
 #define MICROPY_PY_NETWORK                  (1)
@@ -132,9 +146,10 @@ uint32_t trng_random_u32(void);
 #define MICROPY_PY_WEBSOCKET                (MICROPY_PY_LWIP)
 #define MICROPY_PY_WEBREPL                  (MICROPY_PY_LWIP)
 #define MICROPY_PY_LWIP_SOCK_RAW            (MICROPY_PY_LWIP)
-#define MICROPY_PY_HASHLIB_MD5              (MICROPY_PY_SSL)
-#define MICROPY_PY_HASHLIB_SHA1             (MICROPY_PY_SSL)
-#define MICROPY_PY_CRYPTOLIB                (MICROPY_PY_SSL)
+#ifndef MICROPY_PY_NETWORK_PPP_LWIP
+#define MICROPY_PY_NETWORK_PPP_LWIP         (MICROPY_PY_LWIP)
+#endif
+#define MICROPY_PY_LWIP_PPP                 (MICROPY_PY_NETWORK_PPP_LWIP)
 
 #ifndef MICROPY_PY_BLUETOOTH_ENABLE_CENTRAL_MODE
 #define MICROPY_PY_BLUETOOTH_ENABLE_CENTRAL_MODE (1)
@@ -149,7 +164,15 @@ uint32_t trng_random_u32(void);
 #endif
 
 #define MICROPY_HW_ENABLE_USBDEV            (1)
+// Enable USB-CDC serial port
+#ifndef MICROPY_HW_USB_CDC
 #define MICROPY_HW_USB_CDC                  (1)
+#define MICROPY_HW_USB_CDC_1200BPS_TOUCH    (1)
+#endif
+// Enable USB Mass Storage with FatFS filesystem.
+#ifndef MICROPY_HW_USB_MSC
+#define MICROPY_HW_USB_MSC                  (0)
+#endif
 
 // Hooks to add builtins
 
@@ -160,20 +183,12 @@ extern const struct _mp_obj_type_t network_lan_type;
 #define MICROPY_HW_NIC_ETH
 #endif
 
-#if MICROPY_PY_NETWORK_CYW43
-extern const struct _mp_obj_type_t mp_network_cyw43_type;
-#define MICROPY_HW_NIC_CYW43                { MP_ROM_QSTR(MP_QSTR_WLAN), MP_ROM_PTR(&mp_network_cyw43_type) },
-#else
-#define MICROPY_HW_NIC_CYW43
-#endif
-
 #ifndef MICROPY_BOARD_NETWORK_INTERFACES
 #define MICROPY_BOARD_NETWORK_INTERFACES
 #endif
 
 #define MICROPY_PORT_NETWORK_INTERFACES \
     MICROPY_HW_NIC_ETH  \
-    MICROPY_HW_NIC_CYW43 \
     MICROPY_BOARD_NETWORK_INTERFACES \
 
 #ifndef MICROPY_BOARD_ROOT_POINTERS
@@ -188,6 +203,14 @@ extern const struct _mp_obj_type_t mp_network_cyw43_type;
 #define MP_STATE_PORT MP_STATE_VM
 
 // Miscellaneous settings
+#ifndef MICROPY_HW_USB_VID
+#define MICROPY_HW_USB_VID (0xf055)
+#endif
+
+#ifndef MICROPY_HW_USB_PID
+#define MICROPY_HW_USB_PID (0x9802)
+#endif
+
 #ifndef  MICROPY_EVENT_POLL_HOOK
 #define MICROPY_EVENT_POLL_HOOK \
     do { \
@@ -208,8 +231,6 @@ extern const struct _mp_obj_type_t mp_network_cyw43_type;
     ((uint32_t)((uint8_t *)addr + size + 0x1f) & ~0x1f) - ((uint32_t)addr & ~0x1f)))
 
 #define MP_SSIZE_MAX (0x7fffffff)
-typedef int mp_int_t; // must be pointer size
-typedef unsigned mp_uint_t; // must be pointer size
 typedef long mp_off_t;
 
 // Need an implementation of the log2 function which is not a macro.

@@ -83,12 +83,12 @@ static mp_obj_t audio_out_pwm_make_new(const mp_obj_type_t *type, size_t n_args,
     parse_args_and_kw(n_args, n_kw, args, "O&O&iii|ii$ii", kws, mp_hal_get_pin_obj, &a_pin, mp_hal_get_pin_obj, &b_pin, &num_channels, &sample_rate, &bytes_per_sample, &fifo_size, &threshold, &pwm_bits, &phase_correct);
 
     if (a_pin == b_pin) {
-        mp_raise_ValueError("Pins must be different");
+        mp_raise_ValueError(MP_ERROR_TEXT("Pins must be different"));
     }
 
     uint pwm_slice = pwm_gpio_to_slice_num(a_pin);
     if (pwm_slice != pwm_gpio_to_slice_num(b_pin)) {
-        mp_raise_ValueError("Pins must share PWM slice");
+        mp_raise_ValueError(MP_ERROR_TEXT("Pins must share PWM slice"));
     }
 
     int errcode = 0;

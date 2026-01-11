@@ -64,6 +64,7 @@
 #define MBEDTLS_ENTROPY_C
 #define MBEDTLS_GCM_C
 #define MBEDTLS_MD_C
+#define MBEDTLS_MD5_C
 #define MBEDTLS_OID_C
 #define MBEDTLS_PEM_PARSE_C
 #define MBEDTLS_PK_C

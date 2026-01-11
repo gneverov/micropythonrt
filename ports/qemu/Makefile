@@ -2,6 +2,11 @@
 # Initial setup of Makefile environment
 
 BOARD ?= MPS2_AN385
+BOARD_DIR ?= boards/$(BOARD)
+
+ifeq ($(wildcard $(BOARD_DIR)/.),)
+$(error Invalid BOARD specified: $(BOARD_DIR))
+endif
 
 # Make the build directory reflect the board.
 BUILD ?= build-$(BOARD)
@@ -10,7 +15,7 @@ include ../../py/mkenv.mk
 -include mpconfigport.mk
 
 # Include board specific .mk file.
-include boards/$(BOARD).mk
+include $(BOARD_DIR)/mpconfigboard.mk
 
 # qstr definitions (must come before including py.mk)
 QSTR_DEFS = qstrdefsport.h
@@ -19,15 +24,45 @@ QSTR_DEFS = qstrdefsport.h
 MICROPY_ROM_TEXT_COMPRESSION ?= 1
 
 ifeq ($(QEMU_ARCH),arm)
-FROZEN_MANIFEST ?= "freeze('test-frzmpy')"
+MICROPY_HEAP_SIZE ?= 143360
+ifeq ($(BOARD),MICROBIT)
+FROZEN_MANIFEST ?= "require('unittest'); freeze('test-frzmpy', ('frozen_const.py'))"
+else
+FROZEN_MANIFEST ?= "require('unittest'); freeze('test-frzmpy', ('frozen_asm_thumb.py', 'frozen_const.py', 'frozen_viper.py', 'native_frozen_align.py'))"
+endif
 endif
 ifeq ($(QEMU_ARCH),riscv32)
-FROZEN_MANIFEST ?= "freeze('test-frzmpy', ('frozen_const.py', 'frozen_viper.py', 'native_frozen_align.py'))"
+MICROPY_HEAP_SIZE ?= 143360
+FROZEN_MANIFEST ?= "require('unittest'); freeze('test-frzmpy', ('frozen_asm_rv32.py', 'frozen_const.py', 'frozen_viper.py', 'native_frozen_align.py'))"
 endif
+ifeq ($(QEMU_ARCH),riscv64)
+MICROPY_HEAP_SIZE ?= 204800
+FROZEN_MANIFEST ?= "require('unittest'); freeze('test-frzmpy', ('frozen_const.py',))"
+endif
+
+MICROPY_FLOAT_IMPL ?= float
 
 # include py core make definitions
 include $(TOP)/py/py.mk
 include $(TOP)/extmod/extmod.mk
+
+GIT_SUBMODULES += lib/berkeley-db-1.xx
+
+CFLAGS += -DMICROPY_HEAP_SIZE=$(MICROPY_HEAP_SIZE)
+
+ifeq ($(MICROPY_FLOAT_IMPL),double)
+CFLAGS += -DMICROPY_FLOAT_IMPL=MICROPY_FLOAT_IMPL_DOUBLE
+else ifeq ($(MICROPY_FLOAT_IMPL),float)
+CFLAGS += -DMICROPY_FLOAT_IMPL=MICROPY_FLOAT_IMPL_FLOAT -fsingle-precision-constant
+else
+CFLAGS += -DMICROPY_FLOAT_IMPL=MICROPY_FLOAT_IMPL_NONE
+endif
+
+ifeq ($(SUPPORTS_HARDWARE_FP_SINGLE),1)
+CFLAGS += -DMICROPY_HW_FPU=1
+else ifeq ($(SUPPORTS_HARDWARE_FP_DOUBLE),1)
+CFLAGS += -DMICROPY_HW_FPU=1
+endif
 
 ################################################################################
 # ARM specific settings
@@ -40,7 +75,9 @@ LDFLAGS += -nostdlib
 LIBS = $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
 
 SRC_C += \
+	mcu/arm/errorhandler.c \
 	mcu/arm/startup.c \
+	mcu/arm/ticks.c \
 	shared/runtime/semihosting_arm.c \
 
 endif
@@ -73,8 +110,43 @@ LDFLAGS += -mabi=$(RV32_ABI) -march=$(RV32_ARCH) -Wl,-EL
 SRC_C += \
 	mcu/rv32/interrupts.c \
 	mcu/rv32/startup.c \
+	mcu/riscv/ticks.c \
 
 SRC_BOARD_O += mcu/rv32/entrypoint.o
+
+endif
+
+################################################################################
+# RISC-V 64-bit specific settings
+
+ifeq ($(QEMU_ARCH),riscv64)
+
+CROSS_COMPILE ?= riscv64-unknown-elf-
+
+GCC_VERSION = $(word 1, $(subst ., , $(shell $(CC) -dumpversion)))
+
+RV64_ABI = lp64
+
+QEMU_ARGS += -bios none
+
+# GCC 10 and lower do not recognise the Zicsr extension in the architecture name.
+ifeq ($(shell test $(GCC_VERSION) -le 10; echo $$?),0)
+RV64_ARCH ?= rv64imac
+else
+# Recent GCC versions explicitly require to declare extensions.
+RV64_ARCH ?= rv64imac_zicsr
+endif
+
+AFLAGS += -mabi=$(RV64_ABI) -march=$(RV64_ARCH)
+CFLAGS += $(AFLAGS) -mcmodel=medany
+LDFLAGS += -mabi=$(RV64_ABI) -march=$(RV64_ARCH) -Wl,-EL -mcmodel=medany
+
+SRC_C += \
+	mcu/rv64/interrupts.c \
+	mcu/rv64/startup.c \
+	mcu/riscv/ticks.c \
+
+SRC_BOARD_O += mcu/rv64/entrypoint.o
 
 endif
 
@@ -124,6 +196,8 @@ CFLAGS += $(SPECS_FRAGMENT)
 LDFLAGS += $(SPECS_FRAGMENT)
 endif
 
+RUN_TESTS_FULL_ARGS = -t execpty:"$(QEMU_SYSTEM) $(QEMU_ARGS) -serial pty -kernel ../ports/qemu/$<" $(RUN_TESTS_ARGS)
+
 ################################################################################
 # Source files and libraries
 
@@ -138,16 +212,29 @@ SRC_C += \
 	shared/runtime/stdout_helpers.c \
 	shared/runtime/sys_stdio_mphal.c \
 
-LIB_SRC_C += $(SRC_LIB_LIBM_C)
-LIB_SRC_C += $(SRC_LIB_LIBM_SQRT_SW_C)
+ifeq ($(MICROPY_FLOAT_IMPL),double)
+LIBM_SRC_C += $(SRC_LIB_LIBM_DBL_C)
+ifeq ($(SUPPORTS_HARDWARE_FP_DOUBLE),1)
+LIBM_SRC_C += $(SRC_LIB_LIBM_DBL_SQRT_HW_C)
+else
+LIBM_SRC_C += $(SRC_LIB_LIBM_DBL_SQRT_SW_C)
+endif
+else
+LIBM_SRC_C += $(SRC_LIB_LIBM_C)
+ifeq ($(SUPPORTS_HARDWARE_FP_SINGLE),1)
+LIBM_SRC_C += $(SRC_LIB_LIBM_SQRT_HW_C)
+else
+LIBM_SRC_C += $(SRC_LIB_LIBM_SQRT_SW_C)
+endif
+endif
 
 OBJ += $(PY_O)
 OBJ += $(addprefix $(BUILD)/, $(SRC_C:.c=.o))
 OBJ += $(addprefix $(BUILD)/, $(SRC_BOARD_O))
-OBJ += $(addprefix $(BUILD)/, $(LIB_SRC_C:.c=.o))
+OBJ += $(addprefix $(BUILD)/, $(LIBM_SRC_C:.c=.o))
 
 # List of sources for qstr extraction
-SRC_QSTR += $(SRC_C) $(LIB_SRC_C)
+SRC_QSTR += $(SRC_C) $(LIBM_SRC_C)
 
 ################################################################################
 # Main targets
@@ -165,8 +252,21 @@ run: $(BUILD)/firmware.elf
 
 .PHONY: test
 test: $(BUILD)/firmware.elf
+	cd $(TOP)/tests && ./run-tests.py $(RUN_TESTS_FULL_ARGS) $(RUN_TESTS_EXTRA)
+
+.PHONY: test_full
+test_full: $(BUILD)/firmware.elf
+	cd $(TOP)/tests && ./run-tests.py $(RUN_TESTS_FULL_ARGS)
+	cd $(TOP)/tests && ./run-tests.py $(RUN_TESTS_FULL_ARGS) --via-mpy
+	cd $(TOP)/tests && ./run-tests.py $(RUN_TESTS_FULL_ARGS) --via-mpy --emit native
+
+.PHONY: test_natmod
+test_natmod: $(BUILD)/firmware.elf
 	$(eval DIRNAME=ports/$(notdir $(CURDIR)))
-	cd $(TOP)/tests && ./run-tests.py --target qemu --device execpty:"$(QEMU_SYSTEM) $(QEMU_ARGS) -serial pty -kernel ../$(DIRNAME)/$<" $(RUN_TESTS_ARGS) $(RUN_TESTS_EXTRA)
+	cd $(TOP)/tests && \
+		for natmod in btree deflate framebuf heapq random_basic re; do \
+		./run-natmodtests.py -t execpty:"$(QEMU_SYSTEM) $(QEMU_ARGS) -serial pty -kernel ../$(DIRNAME)/$<" $(RUN_TESTS_EXTRA) extmod/$$natmod*.py; \
+		done
 
 $(BUILD)/firmware.elf: $(LDSCRIPT) $(OBJ)
 	$(Q)$(CC) $(LDFLAGS) -o $@ $(OBJ) $(LIBS)

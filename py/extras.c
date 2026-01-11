@@ -30,7 +30,7 @@ void mp_super_attr(mp_obj_t self_in, const mp_obj_type_t *type, qstr attr, mp_ob
 
 size_t mp_obj_list_get_checked(mp_obj_t self_in, mp_obj_t **items) {
     if (!mp_obj_is_exact_type(self_in, &mp_type_list)) {
-        mp_raise_TypeError("expected a list");
+        mp_raise_TypeError(MP_ERROR_TEXT("expected a list"));
     }
     size_t len;
     mp_obj_list_get(self_in, &len, items);
@@ -39,7 +39,7 @@ size_t mp_obj_list_get_checked(mp_obj_t self_in, mp_obj_t **items) {
 
 size_t mp_obj_tuple_get_checked(mp_obj_t self_in, mp_obj_t **items) {
     if (!mp_obj_is_obj(self_in) || !mp_obj_is_tuple_compatible(self_in)) {
-        mp_raise_TypeError("expected a tuple");
+        mp_raise_TypeError(MP_ERROR_TEXT("expected a tuple"));
     }
     size_t len;
     mp_obj_tuple_get(self_in, &len, items);

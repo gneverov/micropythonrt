@@ -60,6 +60,12 @@ enum {
 // This structure contains dynamic configuration for the compiler.
 #if MICROPY_DYNAMIC_COMPILER
 typedef struct mp_dynamic_compiler_t {
+    // This is used to let mpy-cross pass options to the emitter chosen with
+    // `native_arch`.  The main use case for the time being is to give the
+    // RV32 emitter extended information about which extensions can be
+    // optionally used, in order to generate code that's better suited for the
+    // hardware platform the code will run on.
+    void *backend_options;
     uint8_t small_int_bits; // must be <= host small_int_bits
     uint8_t native_arch;
     uint8_t nlr_buf_num_regs;
@@ -76,6 +82,18 @@ typedef struct _mp_sched_item_t {
     mp_obj_t func;
     mp_obj_t arg;
 } mp_sched_item_t;
+
+// gc_lock_depth field is a combination of the GC_COLLECT_FLAG
+// bit and a lock depth shifted GC_LOCK_DEPTH_SHIFT bits left.
+#if MICROPY_ENABLE_FINALISER
+#define GC_COLLECT_FLAG 1
+#define GC_LOCK_DEPTH_SHIFT 1
+#else
+// If finalisers are disabled then this check doesn't matter, as gc_lock()
+// is called anywhere else that heap can't be changed. So save some code size.
+#define GC_COLLECT_FLAG 0
+#define GC_LOCK_DEPTH_SHIFT 0
+#endif
 
 // This structure holds information about a single contiguous area of
 // memory reserved for the memory manager.
@@ -133,7 +151,7 @@ typedef struct _mp_state_mem_t {
 
     #if MICROPY_PY_THREAD && !MICROPY_PY_THREAD_GIL
     // This is a global mutex used to make the GC thread-safe.
-    mp_thread_mutex_t gc_mutex;
+    mp_thread_recursive_mutex_t gc_mutex;
     #endif
 } mp_state_mem_t;
 
@@ -268,6 +286,7 @@ typedef struct _mp_state_thread_t {
     #endif
 
     // Locking of the GC is done per thread.
+    // See GC_LOCK_DEPTH_SHIFT for an explanation of this field.
     uint16_t gc_lock_depth;
 
     ////////////////////////////////////////////////////////////

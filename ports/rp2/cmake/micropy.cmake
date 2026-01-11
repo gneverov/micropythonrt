@@ -14,7 +14,7 @@ function(add_micropy_extension_library target lib)
             MICROPY_PY_EXTENSION
             NO_QSTR
             MP_QSTRDEFSFILE="${genhdr_dir}/${target}.qstrdefs.h"
-        )    
+        )
         add_custom_command(
             OUTPUT ${genhdr_dir}/${target}.qstrdefs.h ${genhdr_dir}/${target}.qstrdefs.c
             COMMAND ${Python3_EXECUTABLE} ${MICROPY_PY_DIR}/makeqstrdefs_ext.py ${target} ${srcs}
@@ -524,13 +524,6 @@ add_custom_command(TARGET ${MICROPY_TARGET}
 # Include the main MicroPython cmake rules.
 include(${MICROPY_DIR}/py/mkrules.cmake)
 
-set(MICROPY_BOARDS_DIR "${MICROPY_PORT_DIR}/boards")
-set(GEN_PINS_AF_CSV "${MICROPY_BOARDS_DIR}/rp2_af.csv")
-set(GEN_PINS_PREFIX "${MICROPY_BOARDS_DIR}/rp2_prefix.c")
-set(GEN_PINS_MKPINS "${MICROPY_BOARDS_DIR}/make-pins.py")
-set(GEN_PINS_SRC "${CMAKE_BINARY_DIR}/pins_${MICROPY_BOARD}.c")
-set(GEN_PINS_HDR "${MICROPY_GENHDR_DIR}/pins.h")
-
 if(NOT PICO_NUM_GPIOS)
     set(PICO_NUM_GPIOS 30)
 endif()
@@ -539,9 +532,28 @@ if(NOT PICO_NUM_EXT_GPIOS)
     set(PICO_NUM_EXT_GPIOS 10)
 endif()
 
-if(EXISTS "${MICROPY_BOARD_DIR}/pins.csv")
-    set(GEN_PINS_BOARD_CSV "${MICROPY_BOARD_DIR}/pins.csv")
-    set(GEN_PINS_CSV_ARG --board-csv "${GEN_PINS_BOARD_CSV}")
+if(PICO_RP2040)
+    set(GEN_PINS_AF_CSV "${MICROPY_PORT_DIR}/boards/rp2040_af.csv")
+elseif(PICO_RP2350)
+    if(PICO_NUM_GPIOS EQUAL 48)
+        set(GEN_PINS_AF_CSV "${MICROPY_PORT_DIR}/boards/rp2350b_af.csv")
+    else()
+        set(GEN_PINS_AF_CSV "${MICROPY_PORT_DIR}/boards/rp2350_af.csv")
+    endif()
+endif()
+
+set(GEN_PINS_PREFIX "${MICROPY_PORT_DIR}/boards/rp2_prefix.c")
+set(GEN_PINS_MKPINS "${MICROPY_PORT_DIR}/boards/make-pins.py")
+set(GEN_PINS_SRC "${CMAKE_BINARY_DIR}/pins_${MICROPY_BOARD}.c")
+set(GEN_PINS_HDR "${MICROPY_GENHDR_DIR}/pins.h")
+
+if(NOT MICROPY_BOARD_PINS)
+    set(MICROPY_BOARD_PINS "${MICROPY_BOARD_DIR}/pins.csv")
+endif()
+
+if(EXISTS "${MICROPY_BOARD_PINS}")
+    set(GEN_PINS_BOARD_CSV "${MICROPY_BOARD_PINS}")
+    set(GEN_PINS_CSV_ARG --board-csv "${MICROPY_BOARD_PINS}")
 endif()
 
 target_sources(${MICROPY_TARGET} PRIVATE
