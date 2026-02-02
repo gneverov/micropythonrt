@@ -209,7 +209,7 @@ static mp_obj_t mp_os_fsync(mp_obj_t fd_in) {
 static MP_DEFINE_CONST_FUN_OBJ_1(mp_os_fsync_obj, mp_os_fsync);
 
 static mp_obj_t mp_os_get_blocking(mp_obj_t fd_in) {
-    int fd = mp_os_get_fd(fd_in);
+    int fd = mp_obj_get_int(fd_in);
     int flags = fcntl(fd, F_GETFL);
     mp_os_check_ret(flags);
     return mp_obj_new_bool(!(flags & O_NONBLOCK));
@@ -320,7 +320,7 @@ static mp_obj_t mp_os_sendfile(size_t n_args, const mp_obj_t *args) {
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_os_sendfile_obj, 4, 4, mp_os_sendfile);
 
 static mp_obj_t mp_os_set_blocking(mp_obj_t fd_in, mp_obj_t blocking_in) {
-    int fd = mp_os_get_fd(fd_in);
+    int fd = mp_obj_get_int(fd_in);
     bool blocking = mp_obj_is_true(blocking_in);
     int flags = fcntl(fd, F_GETFL);
     mp_os_check_ret(flags);
@@ -965,6 +965,35 @@ static mp_obj_t mp_os_eventfd(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_os_eventfd_obj, 1, 2, mp_os_eventfd);
 
+static mp_obj_t mp_os_eventfd_read(mp_obj_t fd_in) {
+    int fd = mp_obj_get_int(fd_in);
+    uint64_t val;
+    vstr_t vstr;
+    vstr_init_fixed_buf(&vstr, sizeof(val), (char *)&val);
+    int ret = mp_os_read_vstr(fd, &vstr, sizeof(val));
+    mp_os_check_ret(ret);
+    return mp_obj_new_int_from_ull(val);
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(mp_os_eventfd_read_obj, mp_os_eventfd_read);
+
+static mp_obj_t mp_os_eventfd_write(mp_obj_t fd_in, mp_obj_t value_in) {
+    int fd = mp_obj_get_int(fd_in);
+    uint64_t val;
+    if (mp_obj_is_small_int(value_in)) {
+        val = MP_OBJ_SMALL_INT_VALUE(value_in);
+    } else if (mp_obj_is_exact_type(value_in, &mp_type_int)) {
+        if (!mp_obj_int_to_bytes_impl(value_in, false, sizeof(val), (byte *)&val)) {
+            mp_raise_type(&mp_type_OverflowError);
+        }
+    } else {
+        mp_raise_TypeError(NULL);
+    }
+    int ret = mp_os_write_str(fd, (char *)&val, sizeof(val));
+    mp_os_check_ret(ret);
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_2(mp_os_eventfd_write_obj, mp_os_eventfd_write);
+
 
 // Process Management
 // ------------------
@@ -1608,6 +1637,8 @@ static const mp_rom_map_elem_t os_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_utime),       MP_ROM_PTR(&mp_os_utime_obj) },
 
     { MP_ROM_QSTR(MP_QSTR_eventfd),     MP_ROM_PTR(&mp_os_eventfd_obj) },
+    { MP_ROM_QSTR(MP_QSTR_eventfd_read), MP_ROM_PTR(&mp_os_eventfd_read_obj) },
+    { MP_ROM_QSTR(MP_QSTR_eventfd_write), MP_ROM_PTR(&mp_os_eventfd_write_obj) },
 
     // Process Management
     { MP_ROM_QSTR(MP_QSTR_abort),       MP_ROM_PTR(&mp_os_abort_obj) },

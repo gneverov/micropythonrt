@@ -59,7 +59,7 @@
     { MP_ROM_QSTR(MP_QSTR_RTC),                 MP_ROM_PTR(&machine_rtc_type) }, \
     { MP_ROM_QSTR(MP_QSTR_Timer),               MP_ROM_PTR(&machine_timer_type) }, \
     \
-    /* { MP_ROM_QSTR(MP_QSTR_APin),                MP_ROM_PTR(&pin_type) }, */ \
+    { MP_ROM_QSTR(MP_QSTR_APin),                MP_ROM_PTR(&pin_type) }, \
     { MP_ROM_QSTR(MP_QSTR_AudioOutPwm),         MP_ROM_PTR(&audio_out_pwm_type) }, \
     { MP_ROM_QSTR(MP_QSTR_PioStateMachine),     MP_ROM_PTR(&state_machine_type) }, \
     /* { MP_ROM_QSTR(MP_QSTR_UART),                MP_ROM_PTR(&uart_type) }, */ \

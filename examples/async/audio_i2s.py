@@ -15,8 +15,10 @@ class AudioOutI2S(machine.PioStateMachine):
         bytes_per_sample,
         *,
         fifo_size=1024,
-        threshold=0
+        threshold=0,
     ):
+        super().__init__(self.PIO_PROGRAM, [sd_pin, sck_pin, ws_pin])
+
         if num_channels == 1:
             dma_size = self.DMA_SIZE_16
         elif num_channels == 2:
@@ -27,7 +29,6 @@ class AudioOutI2S(machine.PioStateMachine):
         if bytes_per_sample != 2:
             raise ValueError("bytes per sample not supported")
 
-        super().__init__(self.PIO_PROGRAM, [sd_pin, sck_pin, ws_pin])
         self.configure_fifo(True, fifo_size, threshold, dma_size)
         self.set_frequency(sample_rate * 2 * bytes_per_sample * 8 * 2)
         self.set_pins(self.OUT, sd_pin, 1)

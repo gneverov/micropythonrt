@@ -7,6 +7,7 @@
 
 #include "extmod/io/modio.h"
 #include "extmod/modos_newlib.h"
+#include "py/extras.h"
 #include "py/parseargs.h"
 #include "py/runtime.h"
 
@@ -94,8 +95,8 @@ static void mp_io_file_attr(mp_obj_t self_in, qstr attr, mp_obj_t *dest) {
             dest[0] = self->name;
             break;
         default:
-            dest[1] = MP_OBJ_SENTINEL;
-            break;
+            mp_super_attr(self_in, &mp_type_io_file, attr, dest);
+            break;        
     }
 }
 
@@ -332,7 +333,8 @@ static mp_uint_t mp_io_file_stream_write(mp_obj_t self_in, const void *buf, mp_u
     return ret;
 }
 
-static const mp_stream_p_t mp_io_file_stream_p = {
+__attribute__((visibility("hidden")))
+const mp_stream_p_t mp_io_file_stream_p = {
     .read = mp_io_file_stream_read,
     .write = mp_io_file_stream_write,
     .ioctl = mp_io_stream_ioctl,

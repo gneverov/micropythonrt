@@ -20,7 +20,6 @@ typedef struct {
     uint32_t error;
     uint32_t top;
     uint32_t divisor;
-    uint8_t fragment[4];
 
     uint num_channels;
     uint sample_rate;

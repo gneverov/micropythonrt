@@ -267,7 +267,6 @@ static const mp_rom_map_elem_t mp_io_base_locals_dict_table[] = {
 };
 static MP_DEFINE_CONST_DICT(mp_io_base_locals_dict, mp_io_base_locals_dict_table);
 
-__attribute__((visibility("hidden")))
 MP_DEFINE_CONST_OBJ_TYPE(
     mp_type_io_base,
     MP_QSTR_IOBase,

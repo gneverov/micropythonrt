@@ -31,6 +31,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/random.h>
 #include <time.h>
 #include <unistd.h>
 #include "morelib/ioctl.h"
@@ -68,7 +69,7 @@
 #include "genhdr/mpversion.h"
 
 #include "pico/binary_info.h"
-#include "hardware/structs/rosc.h"
+#include "pico/time.h"
 
 
 // Embed version info in the binary in machine readable form
@@ -323,6 +324,7 @@ static void init_task(void *params) {
 }
 
 int main(int argc, char **argv) {
+    alarm_pool_init_default();
     set_time();
     xTaskCreate(init_task, "init", INIT_STACK_SIZE / sizeof(StackType_t), NULL, 3, NULL);
     vTaskStartScheduler();
@@ -350,21 +352,8 @@ void nlr_jump_fail(void *val) {
     }
 }
 
-#define POLY (0xD5)
-
-uint8_t rosc_random_u8(size_t cycles) {
-    static uint8_t r;
-    for (size_t i = 0; i < cycles; ++i) {
-        r = ((r << 1) | rosc_hw->randombit) ^ (r & 0x80 ? POLY : 0);
-        mp_hal_delay_us_fast(1);
-    }
-    return r;
-}
-
 uint32_t rosc_random_u32(void) {
-    uint32_t value = 0;
-    for (size_t i = 0; i < 4; ++i) {
-        value = value << 8 | rosc_random_u8(32);
-    }
-    return value;
+    uint32_t r;
+    getrandom(&r, sizeof(r), 0);
+    return r;
 }

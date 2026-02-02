@@ -380,12 +380,13 @@ static mp_obj_t mp_builtin_pow(size_t n_args, const mp_obj_t *args) {
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_builtin_pow_obj, 2, 3, mp_builtin_pow);
 
 static mp_obj_t mp_builtin_print(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
-    enum { ARG_sep, ARG_end, ARG_file };
+    enum { ARG_sep, ARG_end, ARG_file, ARG_flush };
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_sep, MP_ARG_KW_ONLY | MP_ARG_OBJ, {.u_rom_obj = MP_ROM_QSTR(MP_QSTR__space_)} },
         { MP_QSTR_end, MP_ARG_KW_ONLY | MP_ARG_OBJ, {.u_rom_obj = MP_ROM_QSTR(MP_QSTR__0x0a_)} },
         #if MICROPY_PY_IO && MICROPY_PY_SYS_STDFILES
         { MP_QSTR_file, MP_ARG_KW_ONLY | MP_ARG_OBJ, {.u_rom_obj = MP_ROM_PTR(&mp_sys_stdout_obj)} },
+        { MP_QSTR_flush, MP_ARG_KW_ONLY | MP_ARG_BOOL, {.u_bool = false} },
         #endif
     };
 
@@ -419,6 +420,15 @@ static mp_obj_t mp_builtin_print(size_t n_args, const mp_obj_t *pos_args, mp_map
         mp_obj_print_helper(&print, pos_args[i], PRINT_STR);
     }
     mp_print_strn(&print, end_data, u.len[1], 0, 0, 0);
+
+    #if MICROPY_NEWLIB || (MICROPY_PY_IO && MICROPY_PY_SYS_STDFILES)
+    if (u.args[ARG_flush].u_bool) {
+        const mp_stream_p_t *stream = mp_get_stream_raise(u.args[ARG_file].u_obj, MP_STREAM_OP_IOCTL);
+        int errcode;
+        stream->ioctl(u.args[ARG_file].u_obj, MP_STREAM_FLUSH, 0, &errcode);
+    }
+    #endif
+
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_KW(mp_builtin_print_obj, 0, mp_builtin_print);

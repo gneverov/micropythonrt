@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <stdio.h>
+
 #include "py/obj.h"
 #include "py/stream.h"
 
@@ -15,13 +17,6 @@ typedef struct {
     mp_obj_t mode;
     bool closefd;
 } mp_obj_io_file_t;
-
-typedef struct  {
-    void *buffer;
-    size_t size;
-    size_t begin;
-    size_t end;
-} mp_io_buffer_t;
 
 typedef struct {
     mp_obj_base_t base;

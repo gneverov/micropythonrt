@@ -8,30 +8,36 @@
 #include "extmod/modos_newlib.h"
 
 
-static uintptr_t mp_fcntl_load_arg(mp_obj_t arg_in, char tmp[IOCTL_MAX_ARG_SIZE]) {
+static uintptr_t mp_fcntl_load_arg(mp_obj_t arg_in, void **tmp) {
     if (mp_obj_is_int(arg_in)) {
         return mp_obj_get_int(arg_in);
     } else {
         mp_buffer_info_t bufinfo;
         mp_get_buffer_raise(arg_in, &bufinfo, MP_BUFFER_READ);
-        memcpy(tmp, bufinfo.buf, MIN(bufinfo.len, IOCTL_MAX_ARG_SIZE));
-        return (uintptr_t)tmp;
+        void *ret = bufinfo.buf;
+        *tmp = NULL;
+        if ((bufinfo.len < IOCTL_MAX_ARG_SIZE) || !mp_get_buffer(arg_in, &bufinfo, MP_BUFFER_RW)) {
+            ret = *tmp = m_malloc(IOCTL_MAX_ARG_SIZE);
+            memcpy(ret, bufinfo.buf, bufinfo.len);
+        }
+        return (uintptr_t)ret;
     }
 }
 
-static void mp_fcntl_save_arg(mp_obj_t arg_in, char tmp[IOCTL_MAX_ARG_SIZE]) {
+static void mp_fcntl_save_arg(mp_obj_t arg_in, void *tmp) {
     mp_buffer_info_t bufinfo;
-    if (mp_get_buffer(arg_in, &bufinfo, MP_BUFFER_RW)) {
+    if (tmp && mp_get_buffer(arg_in, &bufinfo, MP_BUFFER_RW)) {
         memcpy(bufinfo.buf, tmp, MIN(bufinfo.len, IOCTL_MAX_ARG_SIZE));
     }
+    m_free(tmp);
 }
 
 static mp_obj_t mp_fcntl_fcntl(size_t n_args, const mp_obj_t *args) {
     int fd = mp_os_get_fd(args[0]);
     int cmd = mp_obj_get_int(args[1]);
     mp_obj_t arg_in = (n_args > 2) ? args[2] : MP_OBJ_NEW_SMALL_INT(0);
-    char tmp[IOCTL_MAX_ARG_SIZE];
-    uintptr_t arg = mp_fcntl_load_arg(arg_in, tmp);
+    void *tmp = NULL;
+    uintptr_t arg = mp_fcntl_load_arg(arg_in, &tmp);
     int ret = fcntl(fd, cmd, arg);
     mp_fcntl_save_arg(arg_in, tmp);
     return mp_os_check_ret(ret);
@@ -40,10 +46,10 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(mp_fcntl_fcntl_obj, 2, 3, mp_fcntl_fc
 
 static mp_obj_t mp_fcntl_ioctl(size_t n_args, const mp_obj_t *args) {
     int fd = mp_os_get_fd(args[0]);
-    unsigned long request = mp_obj_get_int(args[1]);
+    unsigned long request = mp_obj_get_uint(args[1]);
     mp_obj_t arg_in = (n_args > 2) ? args[2] : MP_OBJ_NEW_SMALL_INT(0);
-    char tmp[IOCTL_MAX_ARG_SIZE];
-    uintptr_t arg = mp_fcntl_load_arg(arg_in, tmp);
+    void *tmp;
+    uintptr_t arg = mp_fcntl_load_arg(arg_in, &tmp);
     int ret = ioctl(fd, request, arg);
     mp_fcntl_save_arg(arg_in, tmp);
     return mp_os_check_ret(ret);

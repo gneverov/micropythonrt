@@ -88,9 +88,13 @@ int instance_count_native_bases(const mp_obj_type_t *type, const mp_obj_type_t *
 // __init__() method (corresponding to type->make_new) of the native type.
 static mp_obj_t native_base_init_wrapper(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     mp_obj_instance_t *self = MP_OBJ_TO_PTR(args[0]);
-    const mp_obj_type_t *native_base = NULL;
-    instance_count_native_bases(self->base.type, &native_base);
-    self->subobj[0] = MP_OBJ_TYPE_GET_SLOT(native_base, make_new)(native_base, n_args - 1, kw_args->used, args + 1);
+    const mp_obj_type_t *native_base = self->base.type;
+    if (!(self->base.type->flags & MP_TYPE_FLAG_TRUE_SELF)) {
+        instance_count_native_bases(self->base.type, &native_base);
+        n_args--;
+        args++;
+    }
+    self->subobj[0] = MP_OBJ_TYPE_GET_SLOT(native_base, make_new)(native_base, n_args, kw_args->used, args);
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_KW(native_base_init_wrapper_obj, 1, native_base_init_wrapper);

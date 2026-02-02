@@ -2,14 +2,16 @@ import audio_i2s
 import audio_mp3
 import audio_wav
 import machine
+import os
 import re
+import select
 import threading
 import time
 
 
-I2S_SD = machine.Pin(26)
-I2S_SCK = machine.Pin(27)
-I2S_WS = machine.Pin(28)
+I2S_SD = machine.Pin(9)
+I2S_SCK = machine.Pin(10)
+I2S_WS = machine.Pin(11)
 
 
 def i2s_factory(num_channels, sample_rate, bytes_per_sample, buf_size, **kwargs):
@@ -26,8 +28,8 @@ def i2s_factory(num_channels, sample_rate, bytes_per_sample, buf_size, **kwargs)
     )
 
 
-PWM_A = machine.Pin(16)
-PWM_B = machine.Pin(17)
+PWM_A = machine.Pin(12)
+PWM_B = machine.Pin(13)
 
 
 def pwm_factory(num_channels, sample_rate, bytes_per_sample, buf_size, **kwargs):
@@ -43,12 +45,13 @@ def pwm_factory(num_channels, sample_rate, bytes_per_sample, buf_size, **kwargs)
     )
 
 
-BUTTON = machine.Pin(15)
+BUTTON = machine.Pin(14)
 
 
 def button_factory():
     button = machine.APin(BUTTON)
     button.set_pulls(True, False)
+    button.set_edges(True, False)
     return button
 
 
@@ -68,7 +71,7 @@ def open_stream(path):
             raise OSError(f"HTTP error {stream.status}")
         path = m.group(3)
     else:
-        stream = open(path)
+        stream = open(path, "rb")
 
     if path.endswith(".wav"):
         return audio_wav.WavReader(stream)
@@ -78,21 +81,35 @@ def open_stream(path):
         raise ValueError("file type not supported")
 
 
-def control(button, audio_out):
+def control(eventfd, audio_out):
+    stopped = False
+    button = button_factory()
+    button.debounce_time_us = 30_000
+    os.set_blocking(button.fileno(), False)
     try:
-        stopped = False
         while True:
-            button.wait(button.PULSE_DOWN)
-
-            if stopped:
-                print("\n", end="")
-                audio_out.start()
+            select.select([eventfd, button], [], [])
+            try:
+                os.eventfd_read(eventfd)
+            except BlockingIOError:
+                pass
             else:
-                audio_out.stop()
-                print("\nstopped", end="")
-            stopped = not stopped
-    except:
-        pass
+                break
+
+            try:
+                button.wait()
+            except BlockingIOError:
+                pass
+            else:
+                if stopped:
+                    print("\n", end="")
+                    audio_out.start()
+                else:
+                    audio_out.stop()
+                    print("\nstopped", end="", flush=True)
+                stopped = not stopped
+    finally:
+        button.close()
 
 
 def play(path, audio_out_factory, buf_size=2304, **kwargs):
@@ -106,32 +123,33 @@ def play(path, audio_out_factory, buf_size=2304, **kwargs):
         decoder.num_channels, decoder.sample_rate, bytes_per_sample, buf_size, **kwargs
     )
 
-    button = button_factory()
-    control_thread = threading.Thread(target=control, args=(button, audio_out))
+    eventfd = os.eventfd(0, os.O_NONBLOCK)
+    control_thread = threading.Thread(target=control, args=(eventfd, audio_out))
     control_thread.start()
 
     try:
         byte_rate = decoder.num_channels * decoder.sample_rate * bytes_per_sample
         buf = bytearray(buf_size * decoder.num_channels * bytes_per_sample // 2)
         br = decoder.readinto(buf)
-        total_bw = bw = audio_out.write(buf, br)
+        total_bw = 0
         next_bw = byte_rate
         audio_out.start()
 
         x = time.monotonic()
-        while bw:
-            br = decoder.readinto(buf)
-            bw = audio_out.write(buf, br)
+        while br > 0:
+            assert br == len(buf)
+            bw = audio_out.write(buf)
             assert bw == br
             total_bw += bw
             if total_bw > next_bw:
-                print(".", end="")
+                print(".", end="", flush=True)
                 next_bw += byte_rate
+            br = decoder.readinto(buf)
         audio_out.drain()
         print(f"\ntime = {time.monotonic() - x}")
     finally:
         decoder.close()
-        button.close()
+        os.eventfd_write(eventfd, 1)
         # audio_out.debug()
         control_thread.join()
         audio_out.close()

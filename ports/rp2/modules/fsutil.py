@@ -29,6 +29,6 @@ def none():
     local()
 
 
-def sdcard(spi=0, sck=10, mosi=11, miso=12, cs=14, path="/sdcard"):
+def sdcard(spi=0, sck=10, mosi=11, miso=12, cs=14, path="/sdcard", readonly=True):
     machine.SPI(spi, 400000, sck=sck, mosi=mosi, miso=miso)
-    os.mount(f"/dev/sdcard{spi}?cs={cs}", path, "fatfs", 33)
+    os.mount(f"/dev/sdcard{spi}?cs={cs}", path, "fatfs", 33 if readonly else 32)

@@ -105,7 +105,7 @@ set(MICROPY_SOURCE_PORT
     machine_spi.c
     machine_timer.c
     machine/audio_out_pwm.c
-    # machine/pin.c
+    machine/pin.c
     machine/pio_sm.c
     # machine/uart.c
     main.c
@@ -489,6 +489,7 @@ endif()
 
 target_link_libraries(${MICROPY_TARGET}
     morelib_rp2
+    rp2_pioasm
     morelib_fatfs
     morelib_littlefs
     morelib_tinyusb

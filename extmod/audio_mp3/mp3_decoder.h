@@ -11,18 +11,13 @@
 
 typedef struct {
     mp_obj_base_t base;
-    mp_obj_t stream_obj;
     MP3DecInfo *decoder;
     MP3FrameInfo frame_info;
 
-    unsigned char *in_buffer;
-    size_t in_buffer_size;
-    size_t in_buffer_offset;
-    size_t in_buffer_length;
+    mp_obj_t readinto_args[3];
+    size_t extraDataBytes;
 
-    unsigned char *out_buffer;
     size_t out_buffer_size;
-    size_t out_buffer_offset;
 } audio_mp3_obj_decoder_t;
 
 extern const mp_obj_type_t audio_mp3_type_decoder;

@@ -9,6 +9,8 @@
 #include "morelib/mem.h"
 #include "morelib/mtdblk.h"
 #include "morelib/tty.h"
+#include "rp2/gpiodev.h"
+#include "rp2/pio_sm.h"
 #include "rp2/mtd.h"
 #include "rp2/sdcard.h"
 #include "rp2/term_uart.h"
@@ -26,6 +28,8 @@ const struct dev_driver *dev_drvs[] = {
     &term_uart_drv,
     &term_usb_drv,
     &tinyuf2_drv,
+    &rp2_gpiodev_drv,
+    &rp2_pio_drv,
 };
 const size_t dev_num_drvs = sizeof(dev_drvs) / sizeof(dev_drvs[0]);
 
@@ -67,6 +71,10 @@ const struct devfs_entry devfs_entries[] = {
 
     { "/loop0", S_IFBLK, DEV_LOOP0 },
     { "/loop1", S_IFBLK, DEV_LOOP1 },
+
+    { "/gpiochip0", S_IFCHR, DEV_GPIOCHIP0 },
+    { "/pio", S_IFCHR, 0xf100 },
+
 };
 
 const size_t devfs_num_entries = sizeof(devfs_entries) / sizeof(devfs_entries[0]);

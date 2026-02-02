@@ -23,7 +23,6 @@ static void audio_out_pwm_init(audio_out_pwm_obj_t *self) {
     self->pwm_slice = -1u;
     rp2_fifo_init(&self->fifo, true, audio_out_pwm_irq_handler);
     self->error = 0;
-    self->fragment[3] = 0;
 }
 
 static void audio_out_pwm_deinit(audio_out_pwm_obj_t *self) {
@@ -65,7 +64,7 @@ static void audio_out_pwm_irq_handler(rp2_fifo_t *fifo, const ring_t *ring, Base
     self->int_count++;
 
     uint events = audio_out_pwm_poll(self, ring);
-    poll_file_notify_from_isr(self->poll.file, 0, events, pxHigherPriorityTaskWoken);
+    poll_file_notify_from_isr(self->poll.file, POLLOUT | POLLDRAIN, events, pxHigherPriorityTaskWoken);
 
     if (!ring_read_count(ring)) {
         pwm_set_both_levels(self->pwm_slice, self->top / 2, self->top / 2);
@@ -168,71 +167,42 @@ static size_t audio_out_pwm_transcode(audio_out_pwm_obj_t *self, uint16_t *out_b
 
         sample <<= self->pwm_bits;
         sample += self->error;
-        // divmod_u32u32_rem(rand, self->divisor, &self->error);
-        // sample += self->error;
-        // rand = (rand << 1) | (rand >> 31);
         sample = divmod_u32u32_rem(sample, self->divisor, &self->error);
         *out_buffer++ = sample;
     }
     return n_samples;
 }
 
-static void audio_out_pwm_wait(audio_out_pwm_obj_t *self, ring_t *ring) {
-    const size_t out_bytes_per_sample = sizeof(uint16_t);
-    TickType_t xTicksToWait = portMAX_DELAY;
-    do {
-        rp2_fifo_exchange(&self->fifo, ring, 0);
-    }
-    while ((ring_write_count(ring) < out_bytes_per_sample) && mp_poll_wait(&self->poll, POLLOUT, &xTicksToWait));
-}
-
-static mp_obj_t audio_out_pwm_write(size_t n_args, const mp_obj_t *args) {
-    audio_out_pwm_obj_t *self = audio_out_pwm_get_raise(args[0]);
+static mp_obj_t audio_out_pwm_write(mp_obj_t self_in, mp_obj_t buf_in) {
+    audio_out_pwm_obj_t *self = audio_out_pwm_get_raise(self_in);
     mp_buffer_info_t bufinfo;
-    mp_get_buffer_raise(args[1], &bufinfo, MP_BUFFER_READ);
+    mp_get_buffer_raise(buf_in, &bufinfo, MP_BUFFER_READ);
     void *buf = bufinfo.buf;
-    size_t size = bufinfo.len;
-    if ((n_args > 2) && (args[2] != mp_const_none)) {
-        size = MIN(size, (size_t)mp_obj_get_int(args[2]));
-    }
+    size_t len = bufinfo.len;
 
     const size_t in_bytes_per_sample = self->num_channels * self->bytes_per_sample;
     const size_t out_bytes_per_sample = sizeof(uint16_t);
+    TickType_t xTicksToWait = portMAX_DELAY;
     ring_t ring;
-    audio_out_pwm_wait(self, &ring);
+    rp2_fifo_exchange(&self->fifo, &ring, 0);
     size_t ret = 0;
-    size_t fragment_size = self->fragment[3];
-    while ((size - ret + fragment_size >= in_bytes_per_sample) && (ring_write_count(&ring) >= out_bytes_per_sample)) {
-        poll_file_notify(self->poll.file, POLLOUT | POLLDRAIN, 0);
+    while (ret + in_bytes_per_sample <= len) {
         size_t write_size;
         void *write_ptr = ring_at(&ring, ring.write_index, &write_size);
         write_size = MIN(write_size, ring_write_count(&ring));
-        size_t n_samples;
-        if (fragment_size) {
-            memcpy(self->fragment + fragment_size, buf + ret, in_bytes_per_sample - fragment_size);
-            n_samples = audio_out_pwm_transcode(self, write_ptr, write_size, self->fragment, in_bytes_per_sample);
-            assert(n_samples == 1);
-            ret -= fragment_size;
-            fragment_size = 0;
-        } else {
-            n_samples = audio_out_pwm_transcode(self, write_ptr, write_size, buf + ret, size - ret);
+        size_t n_samples = audio_out_pwm_transcode(self, write_ptr, write_size, buf + ret, len - ret);
+        if (n_samples == 0) {
+            if (!mp_poll_wait(&self->poll, POLLOUT, &xTicksToWait)) {
+                break;
+            }
         }
 
         rp2_fifo_exchange(&self->fifo, &ring, n_samples * out_bytes_per_sample);
-        uint events = audio_out_pwm_poll(self, &ring);
-        poll_file_notify(self->poll.file, 0, events);
         ret += n_samples * in_bytes_per_sample;
     }
-    if (size - ret + fragment_size < in_bytes_per_sample) {
-        memcpy(self->fragment + fragment_size, buf + ret, size - ret);
-        fragment_size += size - ret;
-        ret = size;
-    }
-    self->fragment[3] = fragment_size;
-    return mp_obj_new_int(ret);
-
+    return mp_os_check_ret((ret > 0) ? ret : -1);
 }
-static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(audio_out_pwm_write_obj, 2, 3, audio_out_pwm_write);
+static MP_DEFINE_CONST_FUN_OBJ_2(audio_out_pwm_write_obj, audio_out_pwm_write);
 
 static mp_obj_t audio_out_pwm_drain(mp_obj_t self_in) {
     audio_out_pwm_obj_t *self = audio_out_pwm_get_raise(self_in);
