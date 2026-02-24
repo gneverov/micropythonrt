@@ -20,7 +20,7 @@ Before building the project, you first need to do a one-off build and install of
 ```
 ./lib/morelibc/build_picolibc.sh
 ```
-Refer to the Morelibc [documentation](/lib/morelibc/README.md) for more context about this process.
+Refer to the Morelibc [documentation](https://github.com/gneverov/morelibc/blob/main/README.md) for more context about this process.
 
 Once Picolibc is installed, building MicroPythonRT firmware is the same as building MicroPython. 
 ```
